@@ -1,0 +1,10 @@
+target: "http://localhost:3000"
+maxDepth: 3
+userAgent: "AegisBot/1.0"
+headless: true
+scroll: true
+workerCount: 5
+enableScreenshot: true
+screenshotPath: "screenshots"
+enableDownload: false
+downloadPath: "downloads"

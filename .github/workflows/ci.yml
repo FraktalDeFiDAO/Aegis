@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Build
+      run: go build -v ./cmd/aegis
+
+    - name: Test
+      run: go test -v ./...
+
+    - name: Vet
+      run: go vet ./...
+
+    - name: Staticcheck
+      uses: dominikh/staticcheck-action@v1.3.0
+      with:
+        version: "latest"
+        install-go: false

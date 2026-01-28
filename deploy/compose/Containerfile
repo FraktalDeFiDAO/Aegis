@@ -1,0 +1,21 @@
+# Multi-stage build so the runtime image stays minimal.
+FROM docker.io/library/golang:1.25 AS builder
+
+WORKDIR /src
+COPY go.mod go.sum ./
+# Install goimports
+RUN go install golang.org/x/tools/cmd/goimports@latest
+
+COPY . .
+# Optimize imports and manage dependencies
+RUN go mod tidy && go mod vendor
+RUN goimports -w .
+
+RUN CGO_ENABLED=0 go build -mod=vendor -o /agent/bin/aegis ./cmd/aegis/
+
+FROM registry.fedoraproject.org/fedora:41
+RUN dnf -y install ca-certificates && dnf clean all && rm -rf /var/cache/dnf
+
+COPY --from=builder /agent/bin/aegis /usr/local/bin/aegis
+
+ENTRYPOINT ["/usr/local/bin/aegis"]

@@ -1,0 +1,75 @@
+kind: pipeline
+name: aegis-pipeline
+
+steps:
+  prepare:
+    image: golang:latest
+    commands:
+      - go install golang.org/x/tools/cmd/goimports@latest
+      - go mod tidy
+      - go mod vendor
+      - goimports -w .
+    when:
+      event: [push, pull_request]
+
+  lint:
+    image: golangci/golangci-lint:latest
+    commands:
+      - golangci-lint run ./...
+    when:
+      event: [push, pull_request]
+
+  security-scan:
+    image: securego/gosec:latest
+    commands:
+      - gosec ./...
+    when:
+      event: [push, pull_request]
+
+  test:
+    image: golang:latest
+    commands:
+      - go test -v -race -coverprofile=coverage.out ./...
+      - go tool cover -func=coverage.out
+      - |
+        COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print substr($3, 1, length($3)-1)}')
+        echo "Total Coverage: $COVERAGE%"
+        if (( $(echo "$COVERAGE < 80" | bc -l) )); then
+          echo "Coverage below 80% threshold!"
+          exit 1
+        fi
+    when:
+      event: [push, pull_request]
+
+  build:
+    image: mgoltzsche/podman:latest
+    commands:
+      - podman build -t aegis:latest -f deploy/compose/Containerfile .
+      - podman tag aegis:latest localhost:5000/aegis:latest
+      - podman push localhost:5000/aegis:latest --tls-verify=false
+    volumes:
+      - name: podman_sock
+        path: /run/podman/podman.sock
+    when:
+      event: [push]
+      branch: main
+
+  deploy-staging:
+    image: alpine:latest
+    commands:
+      - echo "Deploying to staging environment..."
+      # Example: podman-compose -f deploy/compose/podman-compose.yml up -d
+    when:
+      event: [push]
+      branch: develop
+
+services:
+  registry:
+    image: registry:2
+    ports:
+      - 5000
+
+volumes:
+  - name: podman_sock
+    host:
+      path: /run/user/1000/podman/podman.sock

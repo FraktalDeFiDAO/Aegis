@@ -1,0 +1,31 @@
+version: "3.9"
+
+x-aegis-app: &aegis-app
+  build:
+    context: ../..
+    dockerfile: deploy/compose/Containerfile
+  image: bug-hunter/aegis:latest
+
+services:
+  aegis-auth:
+    <<: *aegis-app
+    command: ["auth", "--session", "/runtime/session/session_lock.json"]
+    volumes:
+      - ../../../../data/session:/runtime/session:z
+  aegis-crawl:
+    <<: *aegis-app
+    command:
+      ["crawl", "--config", "/workspace/config.yaml", "--dump", "/runtime/dump"]
+    depends_on:
+      - aegis-auth
+    volumes:
+      - ../../../../data/session:/runtime/session:z
+      - ../../../../data/dump:/runtime/dump:z
+      - ../../configs/config.yaml:/workspace/config.yaml:ro
+  aegis-scan:
+    <<: *aegis-app
+    command: ["scan", "--input", "/runtime/dump"]
+    depends_on:
+      - aegis-crawl
+    volumes:
+      - ../../../../data/dump:/runtime/dump:z

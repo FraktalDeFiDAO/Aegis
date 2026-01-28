@@ -1,0 +1,29 @@
+# Build artifacts
+aegis
+*.exe
+
+# Browser cache
+.cache/
+
+# Go telemetry and config
+.config/
+
+# Claude settings
+.claude/
+
+# Session files (may contain sensitive data)
+session_lock.json
+*.session
+
+# Output directories
+dump/
+output/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Test coverage
+coverage.out
+coverage.html
