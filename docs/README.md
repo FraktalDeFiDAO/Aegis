@@ -49,6 +49,31 @@ The crawler uses a YAML configuration file with the following options:
 target: https://example.local      # Target URL to crawl
 maxDepth: 3                        # Maximum depth to crawl
 userAgent: "Project-Aegis/1.0"     # User agent string to use
+maxPages: 0                        # Optional cap on pages (0 = unlimited)
+allowPrivateHosts: false           # Block localhost/private IPs unless explicitly allowed
+pageTimeoutSeconds: 30             # Per-page timeout
+```
+
+For scope scraping, you can provide a YAML config via `--scrape-config`:
+
+```yaml
+maxDepth: 2
+workerCount: 2
+headless: true
+scroll: false
+includeExternal: false
+allowPrivateHosts: false
+userAgent: "AegisScrape/1.0"
+headers:
+  X-Hackerone: "your_username"
+maxPages: 0                          # 0 = unlimited
+maxLinksPerPage: 0                   # 0 = unlimited
+requestDelayMillis: 0                # Delay between HTTP requests
+enableScreenshot: false
+screenshotPath: ""                  # Optional, defaults to <outputDir>/screenshots when enabled
+pageTimeoutSeconds: 30
+downloadTimeoutSeconds: 30
+maxDownloadBytes: 20971520
 ```
 
 ## Security Considerations
