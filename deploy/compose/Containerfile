@@ -33,7 +33,7 @@ RUN dnf -y install \
     libXi \
     libXrandr \
     libXrender \
-    libXss \
+    libXScrnSaver \
     libXtst \
     libxcb \
     libxkbcommon \
