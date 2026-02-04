@@ -5,14 +5,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/coppertone/bug-hunter/app/aegis/internal/browser"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/config"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/runner"
-	"github.com/go-rod/rod/lib/launcher"
 )
 
 func TestRunner_FullCoverage(t *testing.T) {
 	// Check if browser is available
-	l := launcher.New().Headless(true)
+	l := browser.NewLauncher(true)
 	if _, err := l.Launch(); err != nil {
 		t.Skipf("Skipping browser test: %v", err)
 	}
@@ -57,17 +58,17 @@ func TestRunner_FullCoverage(t *testing.T) {
 				Actions: []config.Action{
 					// Navigate
 					{Instance: "victim", Type: "navigate", Params: map[string]string{"url": ts.URL + "/login"}},
-					
+
 					// Input & Submit
 					{Instance: "victim", Type: "input", Params: map[string]string{"selector": "input[name=user]", "value": "admin"}},
 					{Instance: "victim", Type: "submit", Params: map[string]string{"selector": "input[name=user]"}}, // Press enter
-					
+
 					// Wait
 					{Instance: "victim", Type: "wait", Params: map[string]string{"duration": "200ms"}},
-					
+
 					// Assert Login
 					{Instance: "victim", Type: "assert", Params: map[string]string{"selector": "#welcome", "text": "Welcome Admin"}},
-					
+
 					// Extract Token
 					{Instance: "victim", Type: "extract", Params: map[string]string{"selector": "#secret-token", "variable": "stolen_token"}},
 				},
@@ -77,7 +78,7 @@ func TestRunner_FullCoverage(t *testing.T) {
 				Actions: []config.Action{
 					// Interpolate variable in URL
 					{Instance: "attacker", Type: "navigate", Params: map[string]string{"url": ts.URL + "/admin?token={{stolen_token}}"}},
-					
+
 					// Assert Access Granted
 					{Instance: "attacker", Type: "assert", Params: map[string]string{"selector": "#admin-panel", "text": "Admin Panel Access Granted"}},
 				},
@@ -88,10 +89,10 @@ func TestRunner_FullCoverage(t *testing.T) {
 					// Check interpolation again
 					{Instance: "attacker", Type: "navigate", Params: map[string]string{"url": ts.URL + "/search?q=test-{{stolen_token}}"}},
 					{Instance: "attacker", Type: "assert", Params: map[string]string{"selector": "#result", "contains": "test-secret-12345"}},
-					
+
 					// Eval
 					{Instance: "attacker", Type: "eval", Params: map[string]string{
-						"script": "() => document.title = 'Hacked'",
+						"script":   "() => document.title = 'Hacked'",
 						"variable": "page_title",
 					}},
 				},
@@ -101,8 +102,8 @@ func TestRunner_FullCoverage(t *testing.T) {
 
 	// 3. Execution
 	r := runner.New(cfg)
-	
-	// Pre-seed a variable to test immediate interpolation if we wanted, 
+
+	// Pre-seed a variable to test immediate interpolation if we wanted,
 	// but here we rely on extraction.
 
 	if err := r.RunAll(); err != nil {
@@ -113,7 +114,7 @@ func TestRunner_FullCoverage(t *testing.T) {
 	if val, ok := r.Variables["stolen_token"]; !ok || val != "secret-12345" {
 		t.Errorf("Expected extracted variable 'stolen_token' to be 'secret-12345', got '%s'", val)
 	}
-	
+
 	val, ok := r.Variables["page_title"]
 	if !ok {
 		t.Errorf("Expected eval variable 'page_title' to be captured")

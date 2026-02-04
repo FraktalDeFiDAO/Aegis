@@ -1,17 +1,21 @@
 package internal_test
 
 import (
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/coppertone/bug-hunter/app/aegis/internal/browser"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/crawler"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/scanner"
 )
 
 func TestFullWorkflowIntegration(t *testing.T) {
+	skipIfNoBrowser(t)
+
 	// 1. Setup Mock Server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
@@ -28,10 +32,11 @@ func TestFullWorkflowIntegration(t *testing.T) {
 	dumpPath := filepath.Join(tempDir, "dump")
 
 	cfg := crawler.Config{
-		Target:      server.URL,
-		MaxDepth:    1,
-		WorkerCount: 1,
-		Headless:    true,
+		Target:            server.URL,
+		MaxDepth:          1,
+		WorkerCount:       1,
+		Headless:          true,
+		AllowPrivateHosts: true,
 	}
 
 	c := crawler.NewCrawler(cfg, "")
@@ -42,10 +47,9 @@ func TestFullWorkflowIntegration(t *testing.T) {
 		t.Fatalf("Crawler failed: %v", err)
 	}
 
-	// Verify that files were created during crawl
-	files, err := os.ReadDir(dumpPath)
-	if err != nil || len(files) == 0 {
-		t.Fatalf("Crawler did not create any files in dump directory: %v", err)
+	// Verify that HTML files were created during crawl
+	if countHTMLFiles(t, dumpPath) == 0 {
+		t.Fatalf("Crawler did not create any HTML files in dump directory")
 	}
 
 	// 4. Run Scan
@@ -85,6 +89,8 @@ func TestFullWorkflowIntegration(t *testing.T) {
 }
 
 func TestCrawlerDepthLimit(t *testing.T) {
+	skipIfNoBrowser(t)
+
 	// Test that crawler respects depth limits
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
@@ -105,10 +111,11 @@ func TestCrawlerDepthLimit(t *testing.T) {
 
 	// Set max depth to 1, so it should only crawl / and /page1, not /page2
 	cfg := crawler.Config{
-		Target:      server.URL,
-		MaxDepth:    1,
-		WorkerCount: 1,
-		Headless:    true,
+		Target:            server.URL,
+		MaxDepth:          1,
+		WorkerCount:       1,
+		Headless:          true,
+		AllowPrivateHosts: true,
 	}
 
 	c := crawler.NewCrawler(cfg, "")
@@ -117,14 +124,37 @@ func TestCrawlerDepthLimit(t *testing.T) {
 		t.Fatalf("Crawler failed: %v", err)
 	}
 
-	// Count the number of files created
-	files, err := os.ReadDir(dumpPath)
-	if err != nil {
-		t.Fatalf("Could not read dump directory: %v", err)
-	}
+	// Count the number of HTML files created
+	count := countHTMLFiles(t, dumpPath)
 
-	// With depth 1 starting from /, we should have at most 2 files (for / and /page1)
-	if len(files) > 2 {
-		t.Errorf("Depth limit not respected: expected at most 2 files, got %d", len(files))
+	// With depth 1 starting from /, we should have at most 2 HTML files (for / and /page1)
+	if count > 2 {
+		t.Errorf("Depth limit not respected: expected at most 2 HTML files, got %d", count)
 	}
+}
+
+func skipIfNoBrowser(t *testing.T) {
+	t.Helper()
+	l := browser.NewLauncher(true)
+	if _, err := l.Launch(); err != nil {
+		t.Skipf("Skipping browser test: %v", err)
+	}
+	l.Cleanup()
+}
+
+func countHTMLFiles(t *testing.T, dir string) int {
+	t.Helper()
+	count := 0
+	if err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		if strings.HasSuffix(strings.ToLower(d.Name()), ".html") {
+			count++
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("Could not walk dump directory: %v", err)
+	}
+	return count
 }

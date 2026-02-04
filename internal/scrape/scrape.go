@@ -19,12 +19,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/coppertone/bug-hunter/app/aegis/internal/browser"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/logger"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/scope"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/session"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/validator"
 	"github.com/go-rod/rod"
-	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
 	"golang.org/x/net/html"
 	"gopkg.in/yaml.v3"
@@ -89,16 +89,49 @@ type ErrorRecord struct {
 }
 
 type Scraper struct {
-	cfg        Config
-	scopeFile  string
-	scope      *scope.Scope
-	downloads  sync.Map
-	manifestMu sync.Mutex
-	manifest   Manifest
-	client     *http.Client
-	pageClient *http.Client
-	log        *slog.Logger
-	browserErr error
+	cfg         Config
+	scopeFile   string
+	scope       *scope.Scope
+	downloads   sync.Map
+	manifestMu  sync.Mutex
+	manifest    Manifest
+	client      *http.Client
+	pageClient  *http.Client
+	log         *slog.Logger
+	store       *scrapeStore
+	browserErr  error
+	browser     *rod.Browser
+	browserMu   sync.Mutex
+}
+
+func (s *Scraper) getBrowser() (*rod.Browser, error) {
+	s.browserMu.Lock()
+	defer s.browserMu.Unlock()
+
+	if s.browser != nil {
+		// Check if connection is still alive
+		_, err := s.browser.Pages()
+		if err == nil {
+			return s.browser, nil
+		}
+		s.log.Warn("Browser connection lost, reconnecting...")
+		_ = s.browser.Close()
+		s.browser = nil
+	}
+
+	l := browser.NewLauncher(s.cfg.Headless)
+	u, err := l.Launch()
+	if err != nil {
+		return nil, fmt.Errorf("launch browser: %w", err)
+	}
+
+	b := rod.New().ControlURL(u)
+	if err := b.Connect(); err != nil {
+		return nil, fmt.Errorf("connect browser: %w", err)
+	}
+
+	s.browser = b
+	return s.browser, nil
 }
 
 type job struct {
@@ -183,6 +216,13 @@ func ScrapeScope(projectDir string, scopePath string, cfg Config) error {
 		return err
 	}
 
+	log := logger.New()
+	store, err := newScrapeStore(filepath.Join(outputDir, "crawl.db"), log)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+
 	if cfg.EnableScreenshot {
 		if cfg.ScreenshotPath == "" {
 			cfg.ScreenshotPath = filepath.Join(outputDir, "screenshots")
@@ -208,7 +248,8 @@ func ScrapeScope(projectDir string, scopePath string, cfg Config) error {
 		scope:      parsedScope,
 		client:     downloadClient,
 		pageClient: pageClient,
-		log:        logger.New(),
+		log:        log,
+		store:      store,
 		manifest: Manifest{
 			GeneratedAt:     time.Now().UTC().Format(time.RFC3339),
 			ScopeFile:       scopePath,
@@ -231,16 +272,19 @@ func ScrapeScope(projectDir string, scopePath string, cfg Config) error {
 }
 
 func (s *Scraper) scrapeTarget(target string, outputDir string) error {
-	var browser *rod.Browser
-	l := launcher.New().Headless(s.cfg.Headless)
-	u, err := l.Launch()
+	_, err := s.getBrowser()
 	if err != nil {
-		s.browserErr = fmt.Errorf("launch browser: %w", err)
-		s.addError(target, s.browserErr)
-	} else {
-		browser = rod.New().ControlURL(u).MustConnect()
-		defer browser.MustClose()
+		s.browserErr = err
+		s.addError(target, err)
 	}
+	defer func() {
+		s.browserMu.Lock()
+		if s.browser != nil {
+			_ = s.browser.Close()
+			s.browser = nil
+		}
+		s.browserMu.Unlock()
+	}()
 
 	if err := s.loadSessionCookies(target); err != nil {
 		s.addError(target, err)
@@ -262,7 +306,7 @@ func (s *Scraper) scrapeTarget(target string, outputDir string) error {
 	limitReached := false
 
 	for i := 0; i < s.cfg.WorkerCount; i++ {
-		go s.worker(browser, jobs, results, outputDir)
+		go s.worker(jobs, results, outputDir)
 	}
 
 	for pending > 0 {
@@ -303,14 +347,14 @@ func (s *Scraper) scrapeTarget(target string, outputDir string) error {
 	return nil
 }
 
-func (s *Scraper) worker(browser *rod.Browser, jobs <-chan job, results chan<- result, outputDir string) {
+func (s *Scraper) worker(jobs <-chan job, results chan<- result, outputDir string) {
 	for j := range jobs {
-		pageRecord, err := s.processPage(browser, j.url, j.depth, outputDir)
+		pageRecord, err := s.processPage(j.url, j.depth, outputDir)
 		results <- result{page: pageRecord, err: err}
 	}
 }
 
-func (s *Scraper) processPage(browser *rod.Browser, pageURL string, depth int, outputDir string) (record PageRecord, err error) {
+func (s *Scraper) processPage(pageURL string, depth int, outputDir string) (record PageRecord, err error) {
 	record = PageRecord{URL: pageURL, Depth: depth}
 	defer func() {
 		if r := recover(); r != nil {
@@ -338,20 +382,26 @@ func (s *Scraper) processPage(browser *rod.Browser, pageURL string, depth int, o
 		time.Duration(s.cfg.RequestDelayMillis)*time.Millisecond,
 		s.cfg.MaxDownloadBytes,
 	)
+
+	// Baseline discovery from static HTML
+	if fetchErr == nil && rawHTML != "" {
+		_, _, _ = s.collectResourcesFromHTML(pageURL, rawHTML)
+	}
+
 	decision := renderDecision{Rendered: false, Reason: "static-content"}
-	useRod := false
 	if fetchErr != nil {
-		useRod = true
+		decision.Rendered = true
 		decision.Reason = fmt.Sprintf("http_fetch_failed: %v", fetchErr)
 	} else {
 		decision = detectRendered(rawHTML)
-		useRod = decision.Rendered
 	}
 
 	record.RenderedDetected = decision.Rendered
 	record.RenderReason = decision.Reason
 
-	if useRod && browser == nil {
+	b, _ := s.getBrowser()
+
+	if decision.Rendered && b == nil {
 		record.Renderer = "http"
 		record.RenderReason = fmt.Sprintf("rod_unavailable: %v", s.browserErr)
 		if s.log != nil {
@@ -360,18 +410,18 @@ func (s *Scraper) processPage(browser *rod.Browser, pageURL string, depth int, o
 		if rawHTML == "" {
 			return record, fmt.Errorf("renderer fallback failed: %v", s.browserErr)
 		}
-		if err := s.processStaticPage(browser, pageURL, outputDir, rawHTML, &record); err != nil {
+		if err := s.processStaticPage(pageURL, outputDir, rawHTML, &record); err != nil {
 			return record, err
 		}
 		return record, nil
 	}
 
-	if useRod {
+	if decision.Rendered {
 		record.Renderer = "rod"
 		if s.log != nil {
 			s.log.Info("Renderer decision", "url", pageURL, "renderer", record.Renderer, "reason", decision.Reason)
 		}
-		if err := s.processRenderedPage(browser, pageURL, outputDir, &record); err != nil {
+		if err := s.processRenderedPage(b, pageURL, outputDir, &record); err != nil {
 			return record, err
 		}
 		return record, nil
@@ -381,18 +431,21 @@ func (s *Scraper) processPage(browser *rod.Browser, pageURL string, depth int, o
 	if s.log != nil {
 		s.log.Info("Renderer decision", "url", pageURL, "renderer", record.Renderer, "reason", decision.Reason)
 	}
-	if err := s.processStaticPage(browser, pageURL, outputDir, rawHTML, &record); err != nil {
+	if err := s.processStaticPage(pageURL, outputDir, rawHTML, &record); err != nil {
 		return record, err
 	}
 	return record, nil
 }
 
 func (s *Scraper) processRenderedPage(browser *rod.Browser, pageURL string, outputDir string, record *PageRecord) error {
-	page := browser.MustPage()
+	page, err := browser.Page(proto.TargetCreateTarget{})
+	if err != nil {
+		return fmt.Errorf("create page: %w", err)
+	}
 	if s.cfg.PageTimeoutSeconds > 0 {
 		page = page.Timeout(time.Duration(s.cfg.PageTimeoutSeconds) * time.Second)
 	}
-	defer page.MustClose()
+	defer page.Close()
 
 	if s.cfg.SessionPath != "" {
 		if len(s.cfg.SessionKey) == 0 {
@@ -412,13 +465,12 @@ func (s *Scraper) processRenderedPage(browser *rod.Browser, pageURL string, outp
 		userAgent = headerUA
 	}
 	if userAgent != "" {
-		page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{
+		err := page.SetUserAgent(&proto.NetworkSetUserAgentOverride{
 			UserAgent: userAgent,
 		})
-	}
-	if len(s.cfg.Headers) > 0 {
-		cleanup := page.MustSetExtraHeaders(headerPairs(s.cfg.Headers)...)
-		defer cleanup()
+		if err != nil {
+			s.log.Warn("failed to set user agent", "error", err)
+		}
 	}
 	if len(s.cfg.Headers) > 0 {
 		cleanup := page.MustSetExtraHeaders(headerPairs(s.cfg.Headers)...)
@@ -428,7 +480,9 @@ func (s *Scraper) processRenderedPage(browser *rod.Browser, pageURL string, outp
 	if err := page.Navigate(pageURL); err != nil {
 		return fmt.Errorf("navigate: %w", err)
 	}
-	page.MustWaitLoad()
+	if err := page.WaitLoad(); err != nil {
+		return fmt.Errorf("wait load: %w", err)
+	}
 	s.syncCookies(page, pageURL)
 
 	if s.cfg.Scroll {
@@ -443,7 +497,10 @@ func (s *Scraper) processRenderedPage(browser *rod.Browser, pageURL string, outp
 		}
 	}
 
-	html := page.MustHTML()
+	html, err := page.HTML()
+	if err != nil {
+		return fmt.Errorf("get html: %w", err)
+	}
 	htmlPath, err := writeHTML(outputDir, pageURL, html)
 	if err != nil {
 		return err
@@ -454,6 +511,20 @@ func (s *Scraper) processRenderedPage(browser *rod.Browser, pageURL string, outp
 	record.Links = uniqueStrings(links)
 	record.Sources = uniqueStrings(sources)
 	record.Imports = uniqueStrings(imports)
+
+	// Record immediately to database
+	if s.store != nil {
+		for _, link := range record.Links {
+			_ = s.store.RecordLink(pageURL, link)
+		}
+		for _, src := range record.Sources {
+			_ = s.store.RecordAsset(src, "source", pageURL, "")
+		}
+		for _, imp := range record.Imports {
+			_ = s.store.RecordAsset(imp, "import", pageURL, "")
+		}
+	}
+
 	if s.cfg.MaxLinksPerPage > 0 && len(record.Links) > s.cfg.MaxLinksPerPage {
 		record.Links = record.Links[:s.cfg.MaxLinksPerPage]
 	}
@@ -465,12 +536,15 @@ func (s *Scraper) processRenderedPage(browser *rod.Browser, pageURL string, outp
 	for _, imp := range record.Imports {
 		discovered = append(discovered, s.downloadResource(imp, pageURL, outputDir, "import")...)
 	}
-	record.Imports = uniqueStrings(append(record.Imports, discovered...))
+	record.Links = uniqueStrings(append(record.Links, discovered...))
+	if s.cfg.MaxLinksPerPage > 0 && len(record.Links) > s.cfg.MaxLinksPerPage {
+		record.Links = record.Links[:s.cfg.MaxLinksPerPage]
+	}
 
 	return nil
 }
 
-func (s *Scraper) processStaticPage(browser *rod.Browser, pageURL string, outputDir string, htmlContent string, record *PageRecord) error {
+func (s *Scraper) processStaticPage(pageURL string, outputDir string, htmlContent string, record *PageRecord) error {
 	if htmlContent == "" {
 		return fmt.Errorf("empty html content")
 	}
@@ -481,10 +555,11 @@ func (s *Scraper) processStaticPage(browser *rod.Browser, pageURL string, output
 	}
 	record.HTMLPath = htmlPath
 
-	links, sources, imports := collectResourcesFromHTML(pageURL, htmlContent)
+	links, sources, imports := s.collectResourcesFromHTML(pageURL, htmlContent)
 	record.Links = uniqueStrings(links)
 	record.Sources = uniqueStrings(sources)
 	record.Imports = uniqueStrings(imports)
+
 	if s.cfg.MaxLinksPerPage > 0 && len(record.Links) > s.cfg.MaxLinksPerPage {
 		record.Links = record.Links[:s.cfg.MaxLinksPerPage]
 	}
@@ -496,13 +571,17 @@ func (s *Scraper) processStaticPage(browser *rod.Browser, pageURL string, output
 	for _, imp := range record.Imports {
 		discovered = append(discovered, s.downloadResource(imp, pageURL, outputDir, "import")...)
 	}
-	record.Imports = uniqueStrings(append(record.Imports, discovered...))
+	record.Links = uniqueStrings(append(record.Links, discovered...))
+	if s.cfg.MaxLinksPerPage > 0 && len(record.Links) > s.cfg.MaxLinksPerPage {
+		record.Links = record.Links[:s.cfg.MaxLinksPerPage]
+	}
 
 	if s.cfg.EnableScreenshot {
-		if browser == nil {
+		b, _ := s.getBrowser()
+		if b == nil {
 			s.addError(pageURL, fmt.Errorf("screenshot skipped: browser unavailable"))
 		} else {
-			if shotPath, err := s.captureScreenshot(browser, pageURL, outputDir); err != nil {
+			if shotPath, err := s.captureScreenshot(b, pageURL, outputDir); err != nil {
 				s.addError(pageURL, err)
 			} else {
 				record.ScreenshotPath = shotPath
@@ -518,11 +597,14 @@ func (s *Scraper) captureScreenshot(browser *rod.Browser, pageURL string, output
 		return "", fmt.Errorf("browser not available")
 	}
 
-	page := browser.MustPage()
+	page, err := browser.Page(proto.TargetCreateTarget{})
+	if err != nil {
+		return "", fmt.Errorf("create page: %w", err)
+	}
 	if s.cfg.PageTimeoutSeconds > 0 {
 		page = page.Timeout(time.Duration(s.cfg.PageTimeoutSeconds) * time.Second)
 	}
-	defer page.MustClose()
+	defer page.Close()
 
 	if s.cfg.SessionPath != "" {
 		if len(s.cfg.SessionKey) == 0 {
@@ -542,15 +624,20 @@ func (s *Scraper) captureScreenshot(browser *rod.Browser, pageURL string, output
 		userAgent = headerUA
 	}
 	if userAgent != "" {
-		page.MustSetUserAgent(&proto.NetworkSetUserAgentOverride{
+		err := page.SetUserAgent(&proto.NetworkSetUserAgentOverride{
 			UserAgent: userAgent,
 		})
+		if err != nil {
+			s.log.Warn("failed to set user agent", "error", err)
+		}
 	}
 
 	if err := page.Navigate(pageURL); err != nil {
 		return "", fmt.Errorf("navigate for screenshot: %w", err)
 	}
-	page.MustWaitLoad()
+	if err := page.WaitLoad(); err != nil {
+		return "", fmt.Errorf("wait load for screenshot: %w", err)
+	}
 	s.syncCookies(page, pageURL)
 
 	if s.cfg.Scroll {
@@ -579,7 +666,7 @@ func (s *Scraper) collectResources(pageURL string, page *rod.Page) ([]string, []
 	var sources []string
 	var imports []string
 
-	add := func(raw string, list *[]string) {
+	add := func(raw string, list *[]string, kind string) {
 		if raw == "" {
 			return
 		}
@@ -595,37 +682,52 @@ func (s *Scraper) collectResources(pageURL string, page *rod.Page) ([]string, []
 			return
 		}
 		*list = append(*list, clean)
+
+		// Immediate sink to store
+		if s.store != nil {
+			if kind == "link" {
+				_ = s.store.RecordLink(pageURL, clean)
+			} else {
+				_ = s.store.RecordAsset(clean, kind, pageURL, "")
+			}
+		}
 	}
 
 	elements, _ := page.Elements("a[href]")
 	for _, el := range elements {
 		if href, _ := el.Attribute("href"); href != nil {
-			add(*href, &links)
+			add(*href, &links, "link")
+		}
+	}
+	formEls, _ := page.Elements("form[action]")
+	for _, el := range formEls {
+		if action, _ := el.Attribute("action"); action != nil {
+			add(*action, &links, "link")
 		}
 	}
 
 	linkEls, _ := page.Elements("link[href]")
 	for _, el := range linkEls {
 		if href, _ := el.Attribute("href"); href != nil {
-			add(*href, &sources)
+			add(*href, &sources, "source")
 		}
 	}
 
 	scriptEls, _ := page.Elements("script[src]")
 	for _, el := range scriptEls {
 		if src, _ := el.Attribute("src"); src != nil {
-			add(*src, &sources)
+			add(*src, &sources, "source")
 		}
 	}
 
 	imgEls, _ := page.Elements("img[src]")
 	for _, el := range imgEls {
 		if src, _ := el.Attribute("src"); src != nil {
-			add(*src, &sources)
+			add(*src, &sources, "source")
 		}
 		if srcset, _ := el.Attribute("srcset"); srcset != nil {
 			for _, candidate := range parseSrcSet(*srcset) {
-				add(candidate, &sources)
+				add(candidate, &sources, "source")
 			}
 		}
 	}
@@ -633,35 +735,35 @@ func (s *Scraper) collectResources(pageURL string, page *rod.Page) ([]string, []
 	mediaEls, _ := page.Elements("video[src], audio[src]")
 	for _, el := range mediaEls {
 		if src, _ := el.Attribute("src"); src != nil {
-			add(*src, &sources)
+			add(*src, &sources, "source")
 		}
 	}
 
 	frameEls, _ := page.Elements("iframe[src], frame[src]")
 	for _, el := range frameEls {
 		if src, _ := el.Attribute("src"); src != nil {
-			add(*src, &sources)
+			add(*src, &sources, "source")
 		}
 	}
 
 	objEls, _ := page.Elements("object[data], embed[src]")
 	for _, el := range objEls {
 		if data, _ := el.Attribute("data"); data != nil {
-			add(*data, &sources)
+			add(*data, &sources, "source")
 		}
 		if src, _ := el.Attribute("src"); src != nil {
-			add(*src, &sources)
+			add(*src, &sources, "source")
 		}
 	}
 
 	sourceEls, _ := page.Elements("source[src]")
 	for _, el := range sourceEls {
 		if src, _ := el.Attribute("src"); src != nil {
-			add(*src, &sources)
+			add(*src, &sources, "source")
 		}
 		if srcset, _ := el.Attribute("srcset"); srcset != nil {
 			for _, candidate := range parseSrcSet(*srcset) {
-				add(candidate, &sources)
+				add(candidate, &sources, "source")
 			}
 		}
 	}
@@ -670,7 +772,7 @@ func (s *Scraper) collectResources(pageURL string, page *rod.Page) ([]string, []
 	for _, el := range styleEls {
 		if text, err := el.Text(); err == nil {
 			for _, urlRef := range parseCSSImports(text) {
-				add(urlRef, &imports)
+				add(urlRef, &imports, "import")
 			}
 		}
 	}
@@ -679,7 +781,7 @@ func (s *Scraper) collectResources(pageURL string, page *rod.Page) ([]string, []
 	for _, el := range styleAttrEls {
 		if styleText, _ := el.Attribute("style"); styleText != nil {
 			for _, urlRef := range parseCSSImports(*styleText) {
-				add(urlRef, &imports)
+				add(urlRef, &imports, "import")
 			}
 		}
 	}
@@ -748,6 +850,10 @@ func collectResourcesFromHTML(pageURL string, htmlContent string) ([]string, []s
 				if href, ok := attrValue(token.Attr, "href"); ok {
 					add(href, &links)
 				}
+			case "form":
+				if action, ok := attrValue(token.Attr, "action"); ok {
+					add(action, &links)
+				}
 			case "link":
 				if href, ok := attrValue(token.Attr, "href"); ok {
 					add(href, &sources)
@@ -806,6 +912,24 @@ func collectResourcesFromHTML(pageURL string, htmlContent string) ([]string, []s
 			}
 		}
 	}
+}
+
+func (s *Scraper) collectResourcesFromHTML(pageURL string, htmlContent string) ([]string, []string, []string) {
+	links, sources, imports := collectResourcesFromHTML(pageURL, htmlContent)
+
+	if s.store != nil {
+		for _, link := range links {
+			_ = s.store.RecordLink(pageURL, link)
+		}
+		for _, src := range sources {
+			_ = s.store.RecordAsset(src, "source", pageURL, "")
+		}
+		for _, imp := range imports {
+			_ = s.store.RecordAsset(imp, "import", pageURL, "")
+		}
+	}
+
+	return links, sources, imports
 }
 
 func attrValue(attrs []html.Attribute, key string) (string, bool) {
@@ -887,6 +1011,13 @@ func (s *Scraper) downloadResource(rawURL string, fromPage string, outputDir str
 				if err == nil {
 					if isHTTPURL(resolved) {
 						discovered = append(discovered, resolved)
+						// If it looks like a route (no extension or .html), record as link
+						if s.store != nil {
+							ext := strings.ToLower(filepath.Ext(resolved))
+							if ext == "" || ext == ".html" || ext == ".php" {
+								_ = s.store.RecordLink(fromPage, resolved)
+							}
+						}
 						discovered = append(discovered, s.downloadResource(resolved, fromPage, outputDir, "import")...)
 					}
 				}
@@ -1135,18 +1266,48 @@ func (s *Scraper) syncCookies(page *rod.Page, pageURL string) {
 }
 
 func (s *Scraper) addPage(record PageRecord) {
+	if s.store != nil {
+		if err := s.store.RecordPage(record.URL, record.Depth, record.HTMLPath); err != nil && s.log != nil {
+			s.log.Warn("scrape db: record page failed", "url", record.URL, "error", err)
+		}
+		for _, link := range record.Links {
+			if err := s.store.RecordLink(record.URL, link); err != nil && s.log != nil {
+				s.log.Warn("scrape db: record link failed", "from", record.URL, "to", link, "error", err)
+			}
+		}
+		for _, src := range record.Sources {
+			if err := s.store.RecordAsset(src, "source", record.URL, ""); err != nil && s.log != nil {
+				s.log.Warn("scrape db: record asset failed", "url", src, "error", err)
+			}
+		}
+		for _, imp := range record.Imports {
+			if err := s.store.RecordAsset(imp, "import", record.URL, ""); err != nil && s.log != nil {
+				s.log.Warn("scrape db: record import failed", "url", imp, "error", err)
+			}
+		}
+	}
 	s.manifestMu.Lock()
 	defer s.manifestMu.Unlock()
 	s.manifest.Pages = append(s.manifest.Pages, record)
 }
 
 func (s *Scraper) addDownload(record FileRecord) {
+	if s.store != nil {
+		if err := s.store.RecordAsset(record.URL, record.Kind, record.FromPage, record.Path); err != nil && s.log != nil {
+			s.log.Warn("scrape db: record download failed", "url", record.URL, "error", err)
+		}
+	}
 	s.manifestMu.Lock()
 	defer s.manifestMu.Unlock()
 	s.manifest.Downloads = append(s.manifest.Downloads, record)
 }
 
 func (s *Scraper) addError(target string, err error) {
+	if s.store != nil {
+		if dbErr := s.store.RecordError(target, "scrape", err); dbErr != nil && s.log != nil {
+			s.log.Warn("scrape db: record error failed", "url", target, "error", dbErr)
+		}
+	}
 	s.manifestMu.Lock()
 	defer s.manifestMu.Unlock()
 	s.manifest.Errors = append(s.manifest.Errors, ErrorRecord{
@@ -1390,6 +1551,8 @@ func parseCSSImports(content string) []string {
 var importRe = regexp.MustCompile(`(?m)^\s*import\s+(?:[^'"]+\s+from\s+)?["']([^"']+)["']`)
 var dynamicImportRe = regexp.MustCompile(`import\(\s*["']([^"']+)["']\s*\)`)
 var requireRe = regexp.MustCompile(`require\(\s*["']([^"']+)["']\s*\)`)
+var pathRe = regexp.MustCompile(`["'](/[a-zA-Z0-9_\-\./]+)["']`)
+var nextChunkRe = regexp.MustCompile(`static/chunks/[a-zA-Z0-9_\-\.]+\.js`)
 
 func parseJSImport(content string) []string {
 	var results []string
@@ -1408,6 +1571,17 @@ func parseJSImport(content string) []string {
 			results = append(results, match[1])
 		}
 	}
+	for _, match := range pathRe.FindAllStringSubmatch(content, -1) {
+		if len(match) > 1 {
+			p := match[1]
+			if len(p) > 1 && !strings.Contains(p, "//") {
+				results = append(results, p)
+			}
+		}
+	}
+	for _, match := range nextChunkRe.FindAllString(content, -1) {
+		results = append(results, "/_next/"+match)
+	}
 	return results
 }
 
@@ -1423,11 +1597,22 @@ func sanitizeSegment(value string) string {
 }
 
 func scrollToBottom(page *rod.Page) {
-	prevHeight := page.MustEval(`() => document.body.scrollHeight`).Int()
-	for i := 0; i < 5; i++ {
-		page.MustEval(`() => window.scrollTo(0, document.body.scrollHeight)`)
+	res, err := page.Eval(`() => document.body.scrollHeight`)
+	if err != nil {
+		return
+	}
+	prevHeight := res.Value.Int()
+	for i := 0; i < 5; i++ { // Limit scroll attempts
+		_, err := page.Eval(`() => window.scrollTo(0, document.body.scrollHeight)`)
+		if err != nil {
+			break
+		}
 		time.Sleep(1 * time.Second)
-		newHeight := page.MustEval(`() => document.body.scrollHeight`).Int()
+		res, err := page.Eval(`() => document.body.scrollHeight`)
+		if err != nil {
+			break
+		}
+		newHeight := res.Value.Int()
 		if newHeight == prevHeight {
 			break
 		}

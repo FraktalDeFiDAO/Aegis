@@ -12,7 +12,6 @@ import (
 
 	"github.com/coppertone/bug-hunter/app/aegis/internal/crawler"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/logger"
-	"github.com/coppertone/bug-hunter/app/aegis/internal/validator"
 )
 
 // Server represents the HTTP API server instance.
@@ -59,10 +58,12 @@ func (s *Server) handleCrawl(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	if err := validator.ValidateTargetURL(cfg.Target); err != nil {
-		http.Error(w, "Invalid target URL", http.StatusBadRequest)
+	normalized, err := cfg.Normalize()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+	cfg = normalized
 
 	// In a real app, we'd run this in the background and return a job ID
 	go func() {

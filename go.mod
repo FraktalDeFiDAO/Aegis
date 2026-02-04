@@ -4,6 +4,7 @@ go 1.25
 
 require (
 	github.com/go-rod/rod v0.99.1
+	github.com/mattn/go-sqlite3 v1.14.33
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/pflag v1.0.6
 	github.com/ysmood/gson v0.7.3

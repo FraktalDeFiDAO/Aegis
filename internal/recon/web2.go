@@ -5,6 +5,7 @@ package recon
 import (
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/coppertone/bug-hunter/app/aegis/internal/logger"
 )
@@ -27,14 +28,18 @@ func (m *Web2Manager) DiscoverSubdomains(domain string) ([]string, error) {
 	return []string{"www." + domain, "api." + domain, "dev." + domain}, nil
 }
 
-// PortScan checks for common open ports (simplified)
-func (m *Web2Manager) PortScan(host string) []int {
+// PortScan checks for open ports. If ports are provided, it scans those;
+// otherwise it scans a default list of common ports.
+func (m *Web2Manager) PortScan(host string, ports ...int) []int {
 	commonPorts := []int{80, 443, 8080, 8443}
+	if len(ports) > 0 {
+		commonPorts = ports
+	}
 	openPorts := []int{}
 
 	for _, port := range commonPorts {
 		address := fmt.Sprintf("%s:%d", host, port)
-		conn, err := net.DialTimeout("tcp", address, 1)
+		conn, err := net.DialTimeout("tcp", address, 1*time.Second)
 		if err == nil {
 			openPorts = append(openPorts, port)
 			conn.Close()

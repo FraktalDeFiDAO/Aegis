@@ -44,7 +44,7 @@ func main() {
 	root.PersistentFlags().StringVar(&scrapeConfigPath, "scrape-config", "", "Scrape configuration file (YAML)")
 	bindScrapeFlags(root.PersistentFlags(), &scrapeOpts)
 
-	root.AddCommand(authCmd(), crawlCmd(), scanCmd(), apiCmd(), benchCmd(), intelCmd(), reconCmd(), scrapeScopeCmd(), exploitCmd(), screenshotCmd())
+	root.AddCommand(authCmd(), crawlCmd(), scanCmd(), apiCmd(), benchCmd(), intelCmd(), reconCmd(), scrapeScopeCmd(), exploitCmd(), screenshotCmd(), rendercheckCmd())
 
 	if err := root.Execute(); err != nil {
 		log.Error("Execution failed", "error", err)
@@ -261,6 +261,12 @@ func authCmd() *cobra.Command {
 
 func crawlCmd() *cobra.Command {
 	var cfgPath, dumpPath, sessionPath string
+	var includeExternal bool
+	var renderVerify string
+	var renderBorderLow int
+	var renderBorderHigh int
+	var renderTextDeltaMin int
+	var renderMaxBytes int64
 
 	cmd := &cobra.Command{
 		Use:   "crawl",
@@ -274,6 +280,24 @@ func crawlCmd() *cobra.Command {
 			var config crawler.Config
 			if err := yaml.Unmarshal(configData, &config); err != nil {
 				return fmt.Errorf("failed to parse config file: %w", err)
+			}
+			if cmd.Flags().Changed("include-external") {
+				config.IncludeExternal = includeExternal
+			}
+			if cmd.Flags().Changed("render-verify") {
+				config.RenderVerify = renderVerify
+			}
+			if cmd.Flags().Changed("render-border-low") {
+				config.RenderBorderLow = renderBorderLow
+			}
+			if cmd.Flags().Changed("render-border-high") {
+				config.RenderBorderHigh = renderBorderHigh
+			}
+			if cmd.Flags().Changed("render-text-delta-min") {
+				config.RenderTextDeltaMin = renderTextDeltaMin
+			}
+			if cmd.Flags().Changed("render-max-bytes") {
+				config.RenderMaxBytes = renderMaxBytes
 			}
 			if len(sessionKey) > 0 {
 				config.SessionKey = sessionKey
@@ -290,8 +314,14 @@ func crawlCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&cfgPath, "config", "configs/config.yaml", "crawler configuration file")
-	cmd.Flags().StringVar(&dumpPath, "dump", "dump", "local mirror directory")
+	cmd.Flags().StringVar(&dumpPath, "dump", "crawl", "local mirror directory")
 	cmd.Flags().StringVar(&sessionPath, "session", "session_lock.json", "file where the session lock is stored")
+	cmd.Flags().BoolVar(&includeExternal, "include-external", false, "Allow crawling external domains")
+	cmd.Flags().StringVar(&renderVerify, "render-verify", "auto", "Render verification mode: auto, never, always")
+	cmd.Flags().IntVar(&renderBorderLow, "render-border-low", 3, "Rendercheck borderline low score")
+	cmd.Flags().IntVar(&renderBorderHigh, "render-border-high", 8, "Rendercheck borderline high score")
+	cmd.Flags().IntVar(&renderTextDeltaMin, "render-text-delta-min", 350, "Rendercheck visible text delta threshold")
+	cmd.Flags().Int64Var(&renderMaxBytes, "render-max-bytes", 2<<20, "Rendercheck/static HTML max bytes")
 	return cmd
 }
 
@@ -328,7 +358,7 @@ func scanCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&inputPath, "input", "dump", "path to the mirrored dump")
+	cmd.Flags().StringVar(&inputPath, "input", "crawl", "path to the mirrored dump")
 	cmd.Flags().StringVar(&outputFormat, "format", "console", "output format (console, json, html)")
 	cmd.Flags().StringVar(&outputFile, "output", "", "output file")
 	return cmd

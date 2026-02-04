@@ -22,14 +22,34 @@ aegis auth --session /path/to/session/file
 Runs the discovery spider against the target application:
 
 ```bash
-aegis crawl --config /path/to/config.yaml --dump /path/to/dump/dir --session /path/to/session/file
+aegis crawl --config /path/to/config.yaml --dump /path/to/crawl/dir --session /path/to/session/file
 ```
+
+If `--dump` is omitted, output defaults to `./crawl`.
+Use `--include-external` to allow cross-domain crawl even when the config file disables it.
+The crawl output folder includes `crawl.db` with pages, links, assets, and error metadata.
+
+### Crawl database
+`crawl.db` stores:
+- `pages`: URL, depth, HTML path, fetch timestamp
+- `links`: from → to edges
+- `assets`: asset URL, kind, source page, local path
+- `errors`: crawl/download errors with stage + timestamp
+- `render_checks`: render verification metrics (method, score, signals, metrics)
 
 ### Scan
 Analyzes the mirrored dump for secrets and dangerous artifacts:
 
 ```bash
-aegis scan --input /path/to/dump/dir
+aegis scan --input /path/to/crawl/dir
+```
+
+### Rendercheck
+Decide whether a page needs JS rendering (heuristic-only or Rod-verified):
+
+```bash
+aegis rendercheck --url https://example.com
+aegis rendercheck --url https://example.com --verify always
 ```
 
 ### Exploit
@@ -48,8 +68,16 @@ The crawler uses a YAML configuration file with the following options:
 ```yaml
 target: https://example.local      # Target URL to crawl
 maxDepth: 3                        # Maximum depth to crawl
+includeExternal: false             # Allow crawling external domains
+renderVerify: "auto"               # Render verification: auto, never, always
+renderBorderLow: 3                 # Rendercheck borderline low score
+renderBorderHigh: 8                # Rendercheck borderline high score
+renderTextDeltaMin: 350            # Visible text delta threshold
+renderMaxBytes: 2097152            # Max bytes for rendercheck/static HTML fetch
 userAgent: "Project-Aegis/1.0"     # User agent string to use
 maxPages: 0                        # Optional cap on pages (0 = unlimited)
+enableDownload: true               # Download assets discovered during crawl
+downloadPath: "downloads"          # Defaults to <dump>/downloads
 allowPrivateHosts: false           # Block localhost/private IPs unless explicitly allowed
 pageTimeoutSeconds: 30             # Per-page timeout
 ```
@@ -75,6 +103,14 @@ pageTimeoutSeconds: 30
 downloadTimeoutSeconds: 30
 maxDownloadBytes: 20971520
 ```
+
+Scope scraping writes outputs into the chosen `outputDir`:
+
+- `manifest.json` (or `manifest.yaml`) with pages, downloads, and errors
+- `crawl.db` (SQLite) with pages, links, assets, and errors
+- `pages/` for saved HTML
+- Host-based folders for downloaded assets (e.g., `example.com/...`)
+- `screenshots/` when enabled
 
 ## Security Considerations
 
