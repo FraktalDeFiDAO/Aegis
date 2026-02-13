@@ -1,0 +1,196 @@
+{
+  "generated_on": "2026-02-13",
+  "title": "Top 25 Vulnerabilities By Category",
+  "description": "Consolidated top-25 vulnerability sets for bug-hunting workflows across web, desktop, mobile, web3, and API.",
+  "methodology": {
+    "notes": [
+      "Some domains publish official Top 10 lists, not Top 25.",
+      "When a domain has only Top 10, entries 11-25 are curated from adjacent primary standards (CWE 2025, MASWE, or OWASP Web3 Attack Vectors Top 15).",
+      "This file is intended for operational prioritization and coverage planning, not as an official ranking replacement."
+    ],
+    "normalization_rules": [
+      "Keep official ordering for source Top 10 lists.",
+      "Append extension items in fixed order with explicit source references.",
+      "Maintain exactly 25 entries per category."
+    ]
+  },
+  "sources": [
+    {
+      "id": "owasp_web_top10_2025",
+      "title": "OWASP Top 10:2025",
+      "url": "https://owasp.org/Top10/2025/"
+    },
+    {
+      "id": "owasp_api_top10_2023",
+      "title": "OWASP API Security Top 10:2023",
+      "url": "https://owasp.org/API-Security/editions/2023/en/0x11-t10/"
+    },
+    {
+      "id": "owasp_desktop_top10_2021",
+      "title": "OWASP Desktop App Security Top 10:2021",
+      "url": "https://owasp.org/www-project-desktop-app-security-top-10/"
+    },
+    {
+      "id": "owasp_mobile_top10_2024",
+      "title": "OWASP Mobile Top 10:2024",
+      "url": "https://owasp.org/www-project-mobile-top-10/"
+    },
+    {
+      "id": "owasp_maswe_beta",
+      "title": "OWASP MASWE (Beta)",
+      "url": "https://mas.owasp.org/MASWE/index.html"
+    },
+    {
+      "id": "owasp_sc_top10_2026",
+      "title": "OWASP Smart Contract Top 10:2026",
+      "url": "https://owasp.org/www-project-smart-contract-top-10/"
+    },
+    {
+      "id": "owasp_web3_attack_vectors_top15",
+      "title": "OWASP Web3 Attack Vectors Top 15",
+      "url": "https://scs.owasp.org/sctop10/Web3-Attack-Vectors-Top15/"
+    },
+    {
+      "id": "mitre_cwe_top25_2025",
+      "title": "MITRE CWE Top 25:2025",
+      "url": "https://cwe.mitre.org/top25/archive/2025/2025_cwe_top25.html"
+    }
+  ],
+  "categories": {
+    "web": [
+      { "rank": 1, "id": "A01:2025", "name": "Broken Access Control", "source": "owasp_web_top10_2025" },
+      { "rank": 2, "id": "A02:2025", "name": "Security Misconfiguration", "source": "owasp_web_top10_2025" },
+      { "rank": 3, "id": "A03:2025", "name": "Software Supply Chain Failures", "source": "owasp_web_top10_2025" },
+      { "rank": 4, "id": "A04:2025", "name": "Cryptographic Failures", "source": "owasp_web_top10_2025" },
+      { "rank": 5, "id": "A05:2025", "name": "Injection", "source": "owasp_web_top10_2025" },
+      { "rank": 6, "id": "A06:2025", "name": "Insecure Design", "source": "owasp_web_top10_2025" },
+      { "rank": 7, "id": "A07:2025", "name": "Authentication Failures", "source": "owasp_web_top10_2025" },
+      { "rank": 8, "id": "A08:2025", "name": "Software or Data Integrity Failures", "source": "owasp_web_top10_2025" },
+      { "rank": 9, "id": "A09:2025", "name": "Security Logging and Alerting Failures", "source": "owasp_web_top10_2025" },
+      { "rank": 10, "id": "A10:2025", "name": "Mishandling of Exceptional Conditions", "source": "owasp_web_top10_2025" },
+      { "rank": 11, "id": "API1:2023", "name": "Broken Object Level Authorization", "source": "owasp_api_top10_2023" },
+      { "rank": 12, "id": "API2:2023", "name": "Broken Authentication", "source": "owasp_api_top10_2023" },
+      { "rank": 13, "id": "API3:2023", "name": "Broken Object Property Level Authorization", "source": "owasp_api_top10_2023" },
+      { "rank": 14, "id": "API4:2023", "name": "Unrestricted Resource Consumption", "source": "owasp_api_top10_2023" },
+      { "rank": 15, "id": "API5:2023", "name": "Broken Function Level Authorization", "source": "owasp_api_top10_2023" },
+      { "rank": 16, "id": "API6:2023", "name": "Unrestricted Access to Sensitive Business Flows", "source": "owasp_api_top10_2023" },
+      { "rank": 17, "id": "API7:2023", "name": "Server Side Request Forgery", "source": "owasp_api_top10_2023" },
+      { "rank": 18, "id": "API8:2023", "name": "Security Misconfiguration", "source": "owasp_api_top10_2023" },
+      { "rank": 19, "id": "API9:2023", "name": "Improper Inventory Management", "source": "owasp_api_top10_2023" },
+      { "rank": 20, "id": "API10:2023", "name": "Unsafe Consumption of APIs", "source": "owasp_api_top10_2023" },
+      { "rank": 21, "id": "CWE-79", "name": "Cross-site Scripting", "source": "mitre_cwe_top25_2025" },
+      { "rank": 22, "id": "CWE-89", "name": "SQL Injection", "source": "mitre_cwe_top25_2025" },
+      { "rank": 23, "id": "CWE-352", "name": "Cross-Site Request Forgery", "source": "mitre_cwe_top25_2025" },
+      { "rank": 24, "id": "CWE-22", "name": "Path Traversal", "source": "mitre_cwe_top25_2025" },
+      { "rank": 25, "id": "CWE-918", "name": "Server-Side Request Forgery", "source": "mitre_cwe_top25_2025" }
+    ],
+    "desktop": [
+      { "rank": 1, "id": "DA1", "name": "Injections", "source": "owasp_desktop_top10_2021" },
+      { "rank": 2, "id": "DA2", "name": "Broken Authentication and Session Management", "source": "owasp_desktop_top10_2021" },
+      { "rank": 3, "id": "DA3", "name": "Sensitive Data Exposure", "source": "owasp_desktop_top10_2021" },
+      { "rank": 4, "id": "DA4", "name": "Improper Cryptography Usage", "source": "owasp_desktop_top10_2021" },
+      { "rank": 5, "id": "DA5", "name": "Improper Authorization", "source": "owasp_desktop_top10_2021" },
+      { "rank": 6, "id": "DA6", "name": "Security Misconfiguration", "source": "owasp_desktop_top10_2021" },
+      { "rank": 7, "id": "DA7", "name": "Insecure Communication", "source": "owasp_desktop_top10_2021" },
+      { "rank": 8, "id": "DA8", "name": "Poor Code Quality", "source": "owasp_desktop_top10_2021" },
+      { "rank": 9, "id": "DA9", "name": "Using Components with Known Vulnerabilities", "source": "owasp_desktop_top10_2021" },
+      { "rank": 10, "id": "DA10", "name": "Insufficient Logging and Monitoring", "source": "owasp_desktop_top10_2021" },
+      { "rank": 11, "id": "CWE-787", "name": "Out-of-bounds Write", "source": "mitre_cwe_top25_2025" },
+      { "rank": 12, "id": "CWE-416", "name": "Use After Free", "source": "mitre_cwe_top25_2025" },
+      { "rank": 13, "id": "CWE-125", "name": "Out-of-bounds Read", "source": "mitre_cwe_top25_2025" },
+      { "rank": 14, "id": "CWE-120", "name": "Classic Buffer Overflow", "source": "mitre_cwe_top25_2025" },
+      { "rank": 15, "id": "CWE-121", "name": "Stack-based Buffer Overflow", "source": "mitre_cwe_top25_2025" },
+      { "rank": 16, "id": "CWE-122", "name": "Heap-based Buffer Overflow", "source": "mitre_cwe_top25_2025" },
+      { "rank": 17, "id": "CWE-476", "name": "NULL Pointer Dereference", "source": "mitre_cwe_top25_2025" },
+      { "rank": 18, "id": "CWE-502", "name": "Deserialization of Untrusted Data", "source": "mitre_cwe_top25_2025" },
+      { "rank": 19, "id": "CWE-20", "name": "Improper Input Validation", "source": "mitre_cwe_top25_2025" },
+      { "rank": 20, "id": "CWE-284", "name": "Improper Access Control", "source": "mitre_cwe_top25_2025" },
+      { "rank": 21, "id": "CWE-306", "name": "Missing Authentication for Critical Function", "source": "mitre_cwe_top25_2025" },
+      { "rank": 22, "id": "CWE-862", "name": "Missing Authorization", "source": "mitre_cwe_top25_2025" },
+      { "rank": 23, "id": "CWE-200", "name": "Exposure of Sensitive Information to an Unauthorized Actor", "source": "mitre_cwe_top25_2025" },
+      { "rank": 24, "id": "CWE-77", "name": "Command Injection", "source": "mitre_cwe_top25_2025" },
+      { "rank": 25, "id": "CWE-770", "name": "Allocation of Resources Without Limits or Throttling", "source": "mitre_cwe_top25_2025" }
+    ],
+    "mobile": [
+      { "rank": 1, "id": "M1:2024", "name": "Improper Credential Usage", "source": "owasp_mobile_top10_2024" },
+      { "rank": 2, "id": "M2:2024", "name": "Inadequate Supply Chain Security", "source": "owasp_mobile_top10_2024" },
+      { "rank": 3, "id": "M3:2024", "name": "Insecure Authentication/Authorization", "source": "owasp_mobile_top10_2024" },
+      { "rank": 4, "id": "M4:2024", "name": "Insufficient Input/Output Validation", "source": "owasp_mobile_top10_2024" },
+      { "rank": 5, "id": "M5:2024", "name": "Insecure Communication", "source": "owasp_mobile_top10_2024" },
+      { "rank": 6, "id": "M6:2024", "name": "Inadequate Privacy Controls", "source": "owasp_mobile_top10_2024" },
+      { "rank": 7, "id": "M7:2024", "name": "Insufficient Binary Protections", "source": "owasp_mobile_top10_2024" },
+      { "rank": 8, "id": "M8:2024", "name": "Security Misconfiguration", "source": "owasp_mobile_top10_2024" },
+      { "rank": 9, "id": "M9:2024", "name": "Insecure Data Storage", "source": "owasp_mobile_top10_2024" },
+      { "rank": 10, "id": "M10:2024", "name": "Insufficient Cryptography", "source": "owasp_mobile_top10_2024" },
+      { "rank": 11, "id": "MASWE-0001", "name": "Insertion of Sensitive Data into Logs", "source": "owasp_maswe_beta" },
+      { "rank": 12, "id": "MASWE-0005", "name": "API Keys Hardcoded in the App Package", "source": "owasp_maswe_beta" },
+      { "rank": 13, "id": "MASWE-0013", "name": "Hardcoded Cryptographic Keys in Use", "source": "owasp_maswe_beta" },
+      { "rank": 14, "id": "MASWE-0027", "name": "Improper Random Number Generation", "source": "owasp_maswe_beta" },
+      { "rank": 15, "id": "MASWE-0038", "name": "Authentication Tokens Not Validated", "source": "owasp_maswe_beta" },
+      { "rank": 16, "id": "MASWE-0040", "name": "Insecure Authentication in WebViews", "source": "owasp_maswe_beta" },
+      { "rank": 17, "id": "MASWE-0047", "name": "Insecure Identity Pinning", "source": "owasp_maswe_beta" },
+      { "rank": 18, "id": "MASWE-0050", "name": "Cleartext Traffic", "source": "owasp_maswe_beta" },
+      { "rank": 19, "id": "MASWE-0052", "name": "Insecure Certificate Validation", "source": "owasp_maswe_beta" },
+      { "rank": 20, "id": "MASWE-0058", "name": "Insecure Deep Links", "source": "owasp_maswe_beta" },
+      { "rank": 21, "id": "MASWE-0067", "name": "Debuggable Flag Not Disabled", "source": "owasp_maswe_beta" },
+      { "rank": 22, "id": "MASWE-0068", "name": "JavaScript Bridges in WebViews", "source": "owasp_maswe_beta" },
+      { "rank": 23, "id": "MASWE-0076", "name": "Dependencies with Known Vulnerabilities", "source": "owasp_maswe_beta" },
+      { "rank": 24, "id": "MASWE-0086", "name": "SQL Injection", "source": "owasp_maswe_beta" },
+      { "rank": 25, "id": "MASWE-0108", "name": "Sensitive Data in Network Traffic", "source": "owasp_maswe_beta" }
+    ],
+    "web3": [
+      { "rank": 1, "id": "SC01:2026", "name": "Access Control Vulnerabilities", "source": "owasp_sc_top10_2026" },
+      { "rank": 2, "id": "SC02:2026", "name": "Business Logic Vulnerabilities", "source": "owasp_sc_top10_2026" },
+      { "rank": 3, "id": "SC03:2026", "name": "Price Oracle Manipulation", "source": "owasp_sc_top10_2026" },
+      { "rank": 4, "id": "SC04:2026", "name": "Flash Loan-Facilitated Attacks", "source": "owasp_sc_top10_2026" },
+      { "rank": 5, "id": "SC05:2026", "name": "Lack of Input Validation", "source": "owasp_sc_top10_2026" },
+      { "rank": 6, "id": "SC06:2026", "name": "Unchecked External Calls", "source": "owasp_sc_top10_2026" },
+      { "rank": 7, "id": "SC07:2026", "name": "Arithmetic Errors (Rounding and Precision)", "source": "owasp_sc_top10_2026" },
+      { "rank": 8, "id": "SC08:2026", "name": "Reentrancy Attacks", "source": "owasp_sc_top10_2026" },
+      { "rank": 9, "id": "SC09:2026", "name": "Integer Overflow and Underflow", "source": "owasp_sc_top10_2026" },
+      { "rank": 10, "id": "SC10:2026", "name": "Proxy and Upgradeability Vulnerabilities", "source": "owasp_sc_top10_2026" },
+      { "rank": 11, "id": "WA01", "name": "Multisig Hijacking", "source": "owasp_web3_attack_vectors_top15" },
+      { "rank": 12, "id": "WA02", "name": "Supply Chain Attacks (npm, PyPI, OSS)", "source": "owasp_web3_attack_vectors_top15" },
+      { "rank": 13, "id": "WA03", "name": "Private Key Compromise (PKC)", "source": "owasp_web3_attack_vectors_top15" },
+      { "rank": 14, "id": "WA04", "name": "Drainer Malware and Drainer-as-a-Service (DaaS)", "source": "owasp_web3_attack_vectors_top15" },
+      { "rank": 15, "id": "WA05", "name": "Fake Interview and Video Call Social Engineering", "source": "owasp_web3_attack_vectors_top15" },
+      { "rank": 16, "id": "WA06", "name": "UI/UX Spoofing and Approval Phishing", "source": "owasp_web3_attack_vectors_top15" },
+      { "rank": 17, "id": "WA07", "name": "Centralised Exchange and Web2/2.5 Infrastructure Breaches", "source": "owasp_web3_attack_vectors_top15" },
+      { "rank": 18, "id": "WA08", "name": "Phishing and General Social Engineering", "source": "owasp_web3_attack_vectors_top15" },
+      { "rank": 19, "id": "WA09", "name": "Romance, Investment, Impersonation, Recovery and Pig Butchering Scams", "source": "owasp_web3_attack_vectors_top15" },
+      { "rank": 20, "id": "WA10", "name": "Rug Pulls, Fake Airdrops and Token Impersonation", "source": "owasp_web3_attack_vectors_top15" },
+      { "rank": 21, "id": "WA11", "name": "Wrench Attacks and Physical Coercion", "source": "owasp_web3_attack_vectors_top15" },
+      { "rank": 22, "id": "WA12", "name": "Insider Threats and Collusive Abuse", "source": "owasp_web3_attack_vectors_top15" },
+      { "rank": 23, "id": "WA13", "name": "DNS, Domain and Routing Infrastructure Hijacking", "source": "owasp_web3_attack_vectors_top15" },
+      { "rank": 24, "id": "WA14", "name": "Wallet Software, Extension and App Compromises", "source": "owasp_web3_attack_vectors_top15" },
+      { "rank": 25, "id": "WA15", "name": "Nation-State Infiltration via Fake Hiring and Malicious OSS Contributions", "source": "owasp_web3_attack_vectors_top15" }
+    ],
+    "api": [
+      { "rank": 1, "id": "API1:2023", "name": "Broken Object Level Authorization", "source": "owasp_api_top10_2023" },
+      { "rank": 2, "id": "API2:2023", "name": "Broken Authentication", "source": "owasp_api_top10_2023" },
+      { "rank": 3, "id": "API3:2023", "name": "Broken Object Property Level Authorization", "source": "owasp_api_top10_2023" },
+      { "rank": 4, "id": "API4:2023", "name": "Unrestricted Resource Consumption", "source": "owasp_api_top10_2023" },
+      { "rank": 5, "id": "API5:2023", "name": "Broken Function Level Authorization", "source": "owasp_api_top10_2023" },
+      { "rank": 6, "id": "API6:2023", "name": "Unrestricted Access to Sensitive Business Flows", "source": "owasp_api_top10_2023" },
+      { "rank": 7, "id": "API7:2023", "name": "Server Side Request Forgery", "source": "owasp_api_top10_2023" },
+      { "rank": 8, "id": "API8:2023", "name": "Security Misconfiguration", "source": "owasp_api_top10_2023" },
+      { "rank": 9, "id": "API9:2023", "name": "Improper Inventory Management", "source": "owasp_api_top10_2023" },
+      { "rank": 10, "id": "API10:2023", "name": "Unsafe Consumption of APIs", "source": "owasp_api_top10_2023" },
+      { "rank": 11, "id": "CWE-862", "name": "Missing Authorization", "source": "mitre_cwe_top25_2025" },
+      { "rank": 12, "id": "CWE-863", "name": "Incorrect Authorization", "source": "mitre_cwe_top25_2025" },
+      { "rank": 13, "id": "CWE-639", "name": "Authorization Bypass Through User-Controlled Key", "source": "mitre_cwe_top25_2025" },
+      { "rank": 14, "id": "CWE-306", "name": "Missing Authentication for Critical Function", "source": "mitre_cwe_top25_2025" },
+      { "rank": 15, "id": "CWE-200", "name": "Exposure of Sensitive Information to an Unauthorized Actor", "source": "mitre_cwe_top25_2025" },
+      { "rank": 16, "id": "CWE-918", "name": "Server-Side Request Forgery", "source": "mitre_cwe_top25_2025" },
+      { "rank": 17, "id": "CWE-20", "name": "Improper Input Validation", "source": "mitre_cwe_top25_2025" },
+      { "rank": 18, "id": "CWE-89", "name": "SQL Injection", "source": "mitre_cwe_top25_2025" },
+      { "rank": 19, "id": "CWE-79", "name": "Cross-site Scripting", "source": "mitre_cwe_top25_2025" },
+      { "rank": 20, "id": "CWE-352", "name": "Cross-Site Request Forgery", "source": "mitre_cwe_top25_2025" },
+      { "rank": 21, "id": "CWE-434", "name": "Unrestricted Upload of File with Dangerous Type", "source": "mitre_cwe_top25_2025" },
+      { "rank": 22, "id": "CWE-502", "name": "Deserialization of Untrusted Data", "source": "mitre_cwe_top25_2025" },
+      { "rank": 23, "id": "CWE-77", "name": "Command Injection", "source": "mitre_cwe_top25_2025" },
+      { "rank": 24, "id": "CWE-78", "name": "OS Command Injection", "source": "mitre_cwe_top25_2025" },
+      { "rank": 25, "id": "CWE-770", "name": "Allocation of Resources Without Limits or Throttling", "source": "mitre_cwe_top25_2025" }
+    ]
+  }
+}
