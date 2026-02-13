@@ -127,3 +127,10 @@ The scanner currently detects:
 - Additional security checks
 - Performance optimizations
 - Better reporting formats
+## Documentation Navigation
+
+- [Development Checklist](DEV_CHECKLIST.md)
+- [Testing Guide](TESTING.md)
+- [Contributing Guide](CONTRIBUTING.md)
+- [Reference Index](reference/README.md)
+- [Top 25 Vulnerabilities By Category](reference/top25-by-category-2026-02-13.md)
