@@ -12,10 +12,10 @@ Reference documents for vulnerability taxonomies and standards used by this repo
 
 Canonical JSON dataset:
 
-- [../../data/vulnerabilities/top25-by-category-2026-02-13.json](../../data/vulnerabilities/top25-by-category-2026-02-13.json)
+- [data/top25-by-category-2026-02-13.json](data/top25-by-category-2026-02-13.json)
 
 ## Source of Truth Policy
 
 - Use `top25-by-category-2026-02-13.md` for human-readable operational prioritization.
-- Use `data/vulnerabilities/top25-by-category-2026-02-13.json` for automation and scanners.
+- Use `docs/reference/data/top25-by-category-2026-02-13.json` for automation and scanners.
 - Keep reference snapshots versioned by date when standards change.

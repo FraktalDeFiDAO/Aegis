@@ -14,7 +14,7 @@ Categories included:
 
 Machine-readable source of truth:
 
-- `data/vulnerabilities/top25-by-category-2026-02-13.json`
+- `docs/reference/data/top25-by-category-2026-02-13.json`
 
 ## Methodology
 
