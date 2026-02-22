@@ -151,10 +151,19 @@ func (e *EOLChecker) CheckEOL(framework, version string) *EOLInfo {
 
 	// Extract major version
 	majorVersion := extractMajorVersion(version)
+	majorOnly := strings.Split(majorVersion, ".")[0]
 
 	// Check each version pattern
 	for _, v := range eolData.Versions {
-		if strings.HasPrefix(majorVersion+".", v.Version) || majorVersion+".x" == v.Version {
+		matches := false
+		if strings.HasSuffix(v.Version, ".x") {
+			matches = strings.HasPrefix(v.Version, majorOnly+".")
+		} else {
+			matches = v.Version == majorVersion ||
+				strings.HasPrefix(majorVersion, v.Version+".") ||
+				strings.HasPrefix(version, v.Version+".")
+		}
+		if matches {
 			info := &EOLInfo{
 				Framework:     framework,
 				Version:       version,
