@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/coppertone/bug-hunter/app/aegis/internal/browser"
@@ -148,6 +149,9 @@ func TestRunner_ErrorHandling(t *testing.T) {
 	if err := r.RunAll(); err == nil {
 		t.Error("Expected error when clicking non-existent element, got nil")
 	} else {
+		if !strings.Contains(err.Error(), "element not found") {
+			t.Fatalf("Expected element-not-found error, got: %v", err)
+		}
 		t.Logf("Got expected error: %v", err)
 	}
 }

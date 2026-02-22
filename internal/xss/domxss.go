@@ -186,7 +186,14 @@ func (a *DOMXSSAnalyzer) compilePatterns() error {
 
 	// Compile sink patterns
 	for _, sink := range a.config.Sinks {
-		re, err := regexp.Compile("(?i)" + sink.Pattern)
+		// Only use case-insensitive if it doesn't start with a letter (e.g. .innerHTML)
+		// but for Function/eval we want case sensitivity to avoid matching 'function'
+		pattern := sink.Pattern
+		if !strings.HasPrefix(pattern, `\b`) && !regexp.MustCompile(`^[A-Za-z]`).MatchString(pattern) {
+			pattern = "(?i)" + pattern
+		}
+
+		re, err := regexp.Compile(pattern)
 		if err != nil {
 			return fmt.Errorf("invalid sink pattern %s: %w", sink.Name, err)
 		}
@@ -223,25 +230,45 @@ func (a *DOMXSSAnalyzer) compilePatterns() error {
 }
 
 // newDOMXSSAnalyzerWithDefaults creates analyzer with hardcoded defaults
+// "Kitchen Sink" fallback edition
 func newDOMXSSAnalyzerWithDefaults() (*DOMXSSAnalyzer, error) {
 	a := &DOMXSSAnalyzer{
 		config: &PatternConfig{
-			Version: "1.0-defaults",
+			Version: "2.0-defaults",
 		},
 	}
 
-	// Hardcoded default sources
+	// Comprehensive default sources
 	defaultSources := map[string]string{
 		"location.hash":          `location\.hash`,
 		"location.search":        `location\.search`,
 		"location.href":          `location\.href`,
+		"location.pathname":      `location\.pathname`,
 		"document.URL":           `document\.URL`,
+		"document.documentURI":   `document\.documentURI`,
+		"document.baseURI":       `document\.baseURI`,
 		"document.referrer":      `document\.referrer`,
 		"document.cookie":        `document\.cookie`,
 		"window.name":            `window\.name`,
+		"window.location":        `window\.location`,
 		"localStorage.getItem":   `localStorage\.getItem\s*\(`,
 		"sessionStorage.getItem": `sessionStorage\.getItem\s*\(`,
+		"localStorage[]":         `localStorage\s*\[`,
+		"sessionStorage[]":       `sessionStorage\s*\[`,
 		"URLSearchParams":        `URLSearchParams\s*\(`,
+		"new URL":                `new\s+URL\s*\(`,
+		"postMessage.data":       `\.data`,
+		"event.data":             `event\.data`,
+		"input.value":            `\.value`,
+		"document.forms":         `document\.forms`,
+		"$.param":                `\$\.param\s*\(`,
+		".val()":                 `\.val\s*\(\s*\)`,
+		".data()":                `\.data\s*\(\s*[''"]`,
+		".attr()":                `\.attr\s*\(\s*[''"]`,
+		"getParameter":           `getParameter\s*\(`,
+		"getParam":               `getParam\s*\(`,
+		"getQuery":               `getQuery\s*\(`,
+		"getUrlParam":            `getUrlParam\s*\(`,
 	}
 
 	for name, pattern := range defaultSources {
@@ -252,37 +279,71 @@ func newDOMXSSAnalyzerWithDefaults() (*DOMXSSAnalyzer, error) {
 		a.sourcePatterns = append(a.sourcePatterns, sourcePattern{
 			Name:        name,
 			Regex:       re,
-			Description: "Default source pattern",
+			Description: "Potential XSS source",
 			Category:    "default",
 		})
 	}
 
-	// Hardcoded default sinks
-	defaultSinks := map[string]struct {
+	// Comprehensive default sinks
+	defaultSinks := []struct {
+		Name     string
 		Pattern  string
 		Severity string
+		CWE      string
 	}{
-		"innerHTML=":         {`\.innerHTML\s*=`, "HIGH"},
-		"eval":               {`\beval\s*\(`, "CRITICAL"},
-		"Function":           {`\bFunction\s*\(`, "CRITICAL"},
-		"document.write":     {`document\.write\s*\(`, "HIGH"},
-		"$.html()":           {`\.html\s*\([^)]+\)`, "HIGH"},
-		"location=":          {`\blocation\s*=`, "MEDIUM"},
-		"v-html":             {`v-html\s*=`, "HIGH"},
-		"dangerouslySetInnerHTML": {`dangerouslySetInnerHTML`, "HIGH"},
+		{"innerHTML=", `\.innerHTML\s*=`, "HIGH", "CWE-79"},
+		{"outerHTML=", `\.outerHTML\s*=`, "HIGH", "CWE-79"},
+		{"document.write", `document\.write\s*\(`, "HIGH", "CWE-79"},
+		{"document.writeln", `document\.writeln\s*\(`, "HIGH", "CWE-79"},
+		{"insertAdjacentHTML", `\.insertAdjacentHTML\s*\(`, "HIGH", "CWE-79"},
+		{"eval", `\beval\s*\(`, "CRITICAL", "CWE-95"},
+		{"Function", `\bFunction\s*\(`, "CRITICAL", "CWE-95"},
+		{"new Function", `new\s+Function\s*\(`, "CRITICAL", "CWE-95"},
+		{"setTimeout-string", `setTimeout\s*\(\s*['" \x60]`, "HIGH", "CWE-95"},
+		{"setInterval-string", `setInterval\s*\(\s*['" \x60]`, "HIGH", "CWE-95"},
+		{"setImmediate-string", `setImmediate\s*\(\s*['" \x60]`, "HIGH", "CWE-95"},
+		{"script.src=", `script\.src\s*=`, "HIGH", "CWE-79"},
+		{"script.text=", `script\.text\s*=`, "CRITICAL", "CWE-79"},
+		{"script.textContent=", `script\.textContent\s*=`, "CRITICAL", "CWE-79"},
+		{"script.innerText=", `script\.innerText\s*=`, "CRITICAL", "CWE-79"},
+		{"iframe.srcdoc=", `\.srcdoc\s*=`, "HIGH", "CWE-79"},
+		{"setAttribute-on*", `setAttribute\s*\(\s*[''"]on`, "HIGH", "CWE-79"},
+		{"setAttribute-src", `setAttribute\s*\(\s*[''"]src[''"]`, "MEDIUM", "CWE-79"},
+		{"setAttribute-href", `setAttribute\s*\(\s*[''"]href[''"]`, "MEDIUM", "CWE-79"},
+		{"location=", `\blocation\s*=`, "MEDIUM", "CWE-601"},
+		{"location.href=", `location\.href\s*=`, "MEDIUM", "CWE-601"},
+		{"location.assign", `location\.assign\s*\(`, "MEDIUM", "CWE-601"},
+		{"location.replace", `location\.replace\s*\(`, "MEDIUM", "CWE-601"},
+		{"window.open", `window\.open\s*\(`, "MEDIUM", "CWE-601"},
+		{"$.html()", `\.html\s*\([^)]+\)`, "HIGH", "CWE-79"},
+		{"$.append()", `\.append\s*\([^)]+\)`, "MEDIUM", "CWE-79"},
+		{"$.prepend()", `\.prepend\s*\([^)]+\)`, "MEDIUM", "CWE-79"},
+		{"$.after()", `\.after\s*\([^)]+\)`, "MEDIUM", "CWE-79"},
+		{"$.before()", `\.before\s*\([^)]+\)`, "MEDIUM", "CWE-79"},
+		{"$.replaceWith()", `\.replaceWith\s*\([^)]+\)`, "MEDIUM", "CWE-79"},
+		{"$.wrap()", `\.wrap\s*\([^)]+\)`, "MEDIUM", "CWE-79"},
+		{"$.globalEval()", `\$\.globalEval\s*\(`, "CRITICAL", "CWE-95"},
+		{"v-html", `v-html\s*=`, "HIGH", "CWE-79"},
+		{"dangerouslySetInnerHTML", `dangerouslySetInnerHTML`, "HIGH", "CWE-79"},
+		{"[innerHTML]", `\[innerHTML\]\s*=`, "HIGH", "CWE-79"},
+		{"ng-bind-html", `ng-bind-html\s*=`, "HIGH", "CWE-79"},
+		{"bypassSecurityTrust", `bypassSecurityTrust`, "HIGH", "CWE-79"},
+		{"trustAsHtml", `trustAsHtml\s*\(`, "HIGH", "CWE-79"},
+		{"m.trust", `m\.trust\s*\(`, "HIGH", "CWE-79"},
+		{"Ractive.unescaped", `Ractive\.unescaped`, "HIGH", "CWE-79"},
 	}
 
-	for name, sink := range defaultSinks {
+	for _, sink := range defaultSinks {
 		re, err := regexp.Compile("(?i)" + sink.Pattern)
 		if err != nil {
 			continue
 		}
 		a.sinkPatterns = append(a.sinkPatterns, sinkPattern{
-			Name:        name,
+			Name:        sink.Name,
 			Regex:       re,
 			Severity:    sink.Severity,
-			CWE:         "CWE-79",
-			Description: "Default sink pattern",
+			CWE:         sink.CWE,
+			Description: "Potential XSS sink",
 			Category:    "default",
 		})
 	}
@@ -298,7 +359,7 @@ func (a *DOMXSSAnalyzer) AnalyzeDirectory(dir string) (*DOMXSSReport, error) {
 		TestPayloads: a.getTestPayloads(),
 	}
 
-	extensions := []string{".html", ".htm", ".js", ".jsx", ".ts", ".tsx", ".vue", ".svelte"}
+	extensions := []string{".html", ".htm", ".js", ".jsx", ".ts", ".tsx", ".vue", ".svelte", ".php", ".asp", ".aspx"}
 
 	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -388,6 +449,9 @@ func (a *DOMXSSAnalyzer) AnalyzeFile(path string) ([]DOMXSSFinding, []string) {
 		for _, sink := range a.sinkPatterns {
 			matches := sink.Regex.FindAllStringIndex(line, -1)
 			for _, match := range matches {
+				if isStaticLiteralAssignment(line, match[1]) {
+					continue
+				}
 				findings = append(findings, DOMXSSFinding{
 					File:        path,
 					Line:        lineNum + 1,
@@ -439,6 +503,9 @@ func (a *DOMXSSAnalyzer) AnalyzeContent(content, identifier string) []DOMXSSFind
 		for _, sink := range a.sinkPatterns {
 			matches := sink.Regex.FindAllStringIndex(line, -1)
 			for _, match := range matches {
+				if isStaticLiteralAssignment(line, match[1]) {
+					continue
+				}
 				findings = append(findings, DOMXSSFinding{
 					File:        identifier,
 					Line:        lineNum + 1,
@@ -562,9 +629,14 @@ func (a *DOMXSSAnalyzer) calculateFlows(report *DOMXSSReport) {
 				} else {
 					confidence = "LOW"
 				}
+                
+                // Heuristic: If they are on the same line, it's very likely a direct flow
+                if distance == 0 {
+                    confidence = "CRITICAL"
+                }
 
 				// Only keep high/medium confidence flows
-				if confidence == "HIGH" || confidence == "MEDIUM" {
+				if confidence == "CRITICAL" || confidence == "HIGH" || confidence == "MEDIUM" {
 					report.HighConfidenceFlows = append(report.HighConfidenceFlows, DOMXSSFlow{
 						Source:     source,
 						Sink:       sink,
@@ -609,6 +681,48 @@ func hashDOMFinding(file string, line int, pattern string) string {
 	h := sha256.New()
 	h.Write([]byte(fmt.Sprintf("%s:%d:%s", file, line, pattern)))
 	return hex.EncodeToString(h.Sum(nil))[:16]
+}
+
+// isStaticLiteralAssignment checks if the value following a sink match is a static string literal
+func isStaticLiteralAssignment(line string, matchEnd int) bool {
+	remaining := strings.TrimSpace(line[matchEnd:])
+	if len(remaining) == 0 {
+		return false
+	}
+
+	// Check for simple string assignments: = "..." or = '...' or = `...`
+	// Also handle function calls with literals: ("...")
+	firstChar := remaining[0]
+	if firstChar == '=' {
+		val := strings.TrimSpace(remaining[1:])
+		if len(val) > 0 {
+			c := val[0]
+			// If it starts with a quote and ends with a quote on the same line, it's a literal
+			if c == '"' || c == '\'' || c == '`' {
+				endQuote := strings.LastIndexByte(val, c)
+				if endQuote > 0 && endQuote == len(val)-1 {
+					return true
+				}
+				// Also check if it's a literal followed by a semicolon
+				if endQuote > 0 && endQuote == len(val)-2 && val[len(val)-1] == ';' {
+					return true
+				}
+			}
+		}
+	} else if firstChar == '(' {
+		val := strings.TrimSpace(remaining[1:])
+		if len(val) > 0 {
+			c := val[0]
+			if c == '"' || c == '\'' || c == '`' {
+				// Rough check for closing paren after literal
+				if strings.Contains(val, string(c)+")") {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
 }
 
 func abs(x int) int {

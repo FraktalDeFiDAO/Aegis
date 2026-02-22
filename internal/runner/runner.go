@@ -14,6 +14,8 @@ import (
 	"github.com/go-rod/rod/lib/proto"
 )
 
+const elementActionTimeout = 5 * time.Second
+
 type Runner struct {
 	Config    *config.Config
 	Instances map[string]*rod.Page    // Holds browser pages key=instanceName
@@ -139,7 +141,11 @@ func (r *Runner) executeTask(task config.Task) error {
 			if selector == "" {
 				return fmt.Errorf("missing 'selector' param")
 			}
-			if err := page.MustElement(selector).Click(proto.InputMouseButtonLeft); err != nil {
+			el, err := page.Timeout(elementActionTimeout).Element(selector)
+			if err != nil {
+				return fmt.Errorf("element not found: %s", selector)
+			}
+			if err := el.Click(proto.InputMouseButtonLeft); err != nil {
 				return err
 			}
 
@@ -149,7 +155,11 @@ func (r *Runner) executeTask(task config.Task) error {
 			if selector == "" {
 				return fmt.Errorf("missing 'selector' param")
 			}
-			if err := page.MustElement(selector).Input(value); err != nil {
+			el, err := page.Timeout(elementActionTimeout).Element(selector)
+			if err != nil {
+				return fmt.Errorf("element not found: %s", selector)
+			}
+			if err := el.Input(value); err != nil {
 				return err
 			}
 			
@@ -157,7 +167,11 @@ func (r *Runner) executeTask(task config.Task) error {
 			// Helper to press enter
 			selector := params["selector"]
 			if selector != "" {
-				if err := page.MustElement(selector).Focus(); err != nil {
+				el, err := page.Timeout(elementActionTimeout).Element(selector)
+				if err != nil {
+					return fmt.Errorf("element not found: %s", selector)
+				}
+				if err := el.Focus(); err != nil {
 					return err
 				}
 				if err := page.Keyboard.Press(input.Enter); err != nil {
@@ -199,7 +213,7 @@ func (r *Runner) executeTask(task config.Task) error {
 				return fmt.Errorf("missing 'selector' or 'variable' param for extract")
 			}
 			
-			el, err := page.Element(selector)
+			el, err := page.Timeout(elementActionTimeout).Element(selector)
 			if err != nil {
 				return fmt.Errorf("element not found: %s", selector)
 			}
@@ -228,7 +242,7 @@ func (r *Runner) executeTask(task config.Task) error {
 			contains := params["contains"]
 			
 			if selector != "" {
-				el, err := page.Element(selector)
+				el, err := page.Timeout(elementActionTimeout).Element(selector)
 				if err != nil {
 					return fmt.Errorf("element not found: %s", selector)
 				}

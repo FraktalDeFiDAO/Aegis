@@ -9,17 +9,22 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/coppertone/bug-hunter/app/aegis/internal/apiextract"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/assets"
+	"github.com/coppertone/bug-hunter/app/aegis/internal/ato"
+	"github.com/coppertone/bug-hunter/app/aegis/internal/browser"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/content"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/crawler"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/exploitable"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/owasp25"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/platform"
+	"github.com/coppertone/bug-hunter/app/aegis/internal/waf"
+	"github.com/coppertone/bug-hunter/app/aegis/internal/workflow"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/xss"
 )
 
@@ -41,6 +46,19 @@ type ScanConfig struct {
 	ScanPlatform    bool
 	DeepCrawl       bool
 	Verbose         bool
+	// WAF Bypass options
+	WAFBypass       bool
+	WAFType         string
+	ElementFocus    string
+	EncodingLevel   int
+	ATOCheck        bool
+	CWEAll          bool
+	// Workflow options
+	WorkflowFile    string
+	WorkflowVars    map[string]string
+	// Browser automation script options
+	ScriptFile      string
+	ScriptHeadless  bool
 }
 
 // CompleteReport holds all scan results
@@ -48,6 +66,10 @@ type CompleteReport struct {
 	ScanInfo      ScanInfo                    `json:"scan_info"`
 	Target        TargetInfo                  `json:"target"`
 	XSS           []xss.XSSFinding            `json:"xss_findings,omitempty"`
+	DOMXSS        *xss.DOMXSSReport           `json:"dom_xss_findings,omitempty"`
+	EnhancedXSS   *xss.ScanResult             `json:"enhanced_xss_findings,omitempty"`
+	WAFDetection  *waf.DetectionResult        `json:"waf_detection,omitempty"`
+	ATOFindings   []ato.ATOFinding            `json:"ato_findings,omitempty"`
 	Assets        *assets.DiscoveryResult     `json:"asset_discovery,omitempty"`
 	APIs          *apiextract.ExtractResult   `json:"api_endpoints,omitempty"`
 	Pages         []crawler.Page              `json:"discovered_pages,omitempty"`
@@ -85,14 +107,19 @@ type ExploitableFinding struct {
 }
 
 type Summary struct {
-	TotalXSS          int            `json:"total_xss"`
-	TotalAssets       int            `json:"total_assets"`
-	TotalAPIs         int            `json:"total_apis"`
-	TotalPages        int            `json:"total_pages"`
-	TotalExploitable  int            `json:"total_exploitable"`
-	TotalOWASP        int            `json:"total_owasp"`
-	TotalEOL          int            `json:"total_eol"`
-	SeverityCounts    SeverityCounts `json:"severity_counts"`
+	TotalXSS           int            `json:"total_xss"`
+	TotalDOMXSS        int            `json:"total_dom_xss"`
+	TotalEnhancedXSS   int            `json:"total_enhanced_xss"`
+	TotalATO           int            `json:"total_ato"`
+	TotalAssets        int            `json:"total_assets"`
+	TotalAPIs          int            `json:"total_apis"`
+	TotalPages         int            `json:"total_pages"`
+	TotalExploitable   int            `json:"total_exploitable"`
+	TotalOWASP         int            `json:"total_owasp"`
+	TotalEOL           int            `json:"total_eol"`
+	WAFDetected        string         `json:"waf_detected,omitempty"`
+	WAFBypassed        bool           `json:"waf_bypassed,omitempty"`
+	SeverityCounts     SeverityCounts `json:"severity_counts"`
 }
 
 type SeverityCounts struct {
@@ -105,14 +132,14 @@ type SeverityCounts struct {
 
 func main() {
 	config := parseFlags()
-	
+
 	// Print banner
 	printBanner()
-	
+
 	// Setup context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	
+
 	// Handle interrupts
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
@@ -122,7 +149,19 @@ func main() {
 		cancel()
 		os.Exit(1)
 	}()
-	
+
+	// Check for workflow mode
+	if config.WorkflowFile != "" {
+		runWorkflow(ctx, config)
+		return
+	}
+
+	// Check for browser automation script mode
+	if config.ScriptFile != "" {
+		runBrowserScript(ctx, config)
+		return
+	}
+
 	// Run scan
 	startTime := time.Now()
 	report := runCompleteScan(ctx, config)
@@ -130,7 +169,7 @@ func main() {
 	report.ScanInfo.Duration = time.Since(startTime)
 	report.ScanInfo.ScannerVersion = "1.0.0"
 	report.GeneratedAt = time.Now()
-	
+
 	// Output results
 	if err := outputResults(report, config); err != nil {
 		fmt.Fprintf(os.Stderr, "Error outputting results: %v\n", err)
@@ -138,18 +177,219 @@ func main() {
 	}
 }
 
+// runWorkflow executes a workflow file
+func runWorkflow(ctx context.Context, config ScanConfig) {
+	fmt.Printf("[*] Loading workflow: %s\n", config.WorkflowFile)
+
+	// Load workflow
+	wf, err := workflow.LoadWorkflow(config.WorkflowFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading workflow: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Validate workflow
+	if err := wf.Validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "Workflow validation error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("[*] Workflow: %s\n", wf.Name)
+	if wf.Description != "" {
+		fmt.Printf("[*] Description: %s\n", wf.Description)
+	}
+	fmt.Printf("[*] Steps: %d\n\n", len(wf.Steps))
+
+	// Prepare variables
+	vars := make(map[string]string)
+	if config.Target != "" {
+		vars["target"] = config.Target
+	}
+	if config.OutputDir != "" {
+		vars["output_dir"] = config.OutputDir
+	}
+	// Merge command-line variables
+	for k, v := range config.WorkflowVars {
+		vars[k] = v
+	}
+
+	// Create runner
+	runner := workflow.NewRunner(wf,
+		workflow.WithVerbose(config.Verbose),
+		workflow.WithVariables(vars),
+	)
+
+	// Run workflow
+	result, err := runner.Run(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Workflow execution error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Print results
+	fmt.Println()
+	fmt.Println(strings.Repeat("=", 60))
+	fmt.Printf("WORKFLOW RESULTS: %s\n", result.Status)
+	fmt.Println(strings.Repeat("=", 60))
+	fmt.Printf("Duration: %s\n", result.Duration)
+	fmt.Printf("Steps: %d total\n", len(result.Steps))
+
+	// Count step statuses
+	success, failed, skipped := 0, 0, 0
+	for _, step := range result.Steps {
+		switch step.Status {
+		case "success":
+			success++
+		case "failure":
+			failed++
+			fmt.Printf("  [FAILED] %s: %s\n", step.StepID, step.Error)
+		case "skipped":
+			skipped++
+		}
+	}
+	fmt.Printf("  Success: %d, Failed: %d, Skipped: %d\n", success, failed, skipped)
+
+	// Collect findings
+	findings := result.GetFindings()
+	if len(findings) > 0 {
+		fmt.Printf("\nFindings: %d total\n", len(findings))
+	}
+
+	// Save results if output directory specified
+	if config.OutputDir != "" {
+		os.MkdirAll(config.OutputDir, 0755)
+		resultPath := filepath.Join(config.OutputDir, "workflow-result.json")
+		if err := runner.SaveResult(result, resultPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to save result: %v\n", err)
+		} else {
+			fmt.Printf("\n[+] Results saved to: %s\n", resultPath)
+		}
+	}
+
+	fmt.Println(strings.Repeat("=", 60))
+
+	if result.Status == "failure" {
+		os.Exit(1)
+	}
+}
+
+// runBrowserScript executes a browser automation script
+func runBrowserScript(ctx context.Context, config ScanConfig) {
+	fmt.Printf("[*] Loading browser automation script: %s\n", config.ScriptFile)
+
+	// Load script
+	script, err := browser.LoadScript(config.ScriptFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error loading script: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("[*] Script: %s\n", script.Name)
+	if script.Description != "" {
+		fmt.Printf("[*] Description: %s\n", script.Description)
+	}
+	fmt.Printf("[*] Actions: %d\n\n", len(script.Actions))
+
+	// Prepare variables from command line
+	for k, v := range config.WorkflowVars {
+		script.Variables[k] = v
+	}
+	// Add target if specified
+	if config.Target != "" {
+		script.Variables["target"] = config.Target
+	}
+
+	// Create automator
+	automator := browser.NewAutomator(
+		browser.WithHeadless(config.ScriptHeadless),
+		browser.WithAutomatorVerbose(config.Verbose),
+		browser.WithAutomatorTimeout(config.Timeout),
+	)
+	if config.OutputDir != "" {
+		browser.WithScreenshotsDir(filepath.Join(config.OutputDir, "screenshots"))(automator)
+	}
+
+	// Run script
+	result, err := automator.Run(ctx, script)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Script execution error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Print results
+	fmt.Println()
+	fmt.Println(strings.Repeat("=", 60))
+	fmt.Printf("SCRIPT RESULTS: %s\n", result.Status)
+	fmt.Println(strings.Repeat("=", 60))
+	fmt.Printf("Duration: %s\n", result.Duration)
+	fmt.Printf("Actions: %d executed\n", len(result.Actions))
+
+	// Count action statuses
+	success, failed, skipped := 0, 0, 0
+	for _, action := range result.Actions {
+		switch action.Status {
+		case "success":
+			success++
+		case "failure":
+			failed++
+			name := action.ActionName
+			if name == "" {
+				name = string(action.ActionType)
+			}
+			fmt.Printf("  [FAILED] %s: %s\n", name, action.Error)
+		case "skipped":
+			skipped++
+		}
+	}
+	fmt.Printf("  Success: %d, Failed: %d, Skipped: %d\n", success, failed, skipped)
+
+	// Report extracted data
+	if len(result.Extracted) > 0 {
+		fmt.Println("\nExtracted Data:")
+		for k, v := range result.Extracted {
+			fmt.Printf("  %s: %v\n", k, v)
+		}
+	}
+
+	// Report screenshots
+	if len(result.Screenshots) > 0 {
+		fmt.Printf("\nScreenshots (%d):\n", len(result.Screenshots))
+		for _, s := range result.Screenshots {
+			fmt.Printf("  - %s\n", s)
+		}
+	}
+
+	// Save results if output directory specified
+	if config.OutputDir != "" {
+		os.MkdirAll(config.OutputDir, 0755)
+		resultPath := filepath.Join(config.OutputDir, "script-result.json")
+		if err := browser.SaveScriptResult(result, resultPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to save result: %v\n", err)
+		} else {
+			fmt.Printf("\n[+] Results saved to: %s\n", resultPath)
+		}
+	}
+
+	fmt.Println(strings.Repeat("=", 60))
+
+	if result.Status == "failure" {
+		os.Exit(1)
+	}
+}
+
 func parseFlags() ScanConfig {
 	var config ScanConfig
-	
-	flag.StringVar(&config.Target, "target", "", "Target URL (required)")
+	config.WorkflowVars = make(map[string]string)
+
+	flag.StringVar(&config.Target, "target", "", "Target URL (required unless using workflow)")
 	flag.StringVar(&config.Host, "host", "", "Target host for port scanning (optional)")
 	portsStr := flag.String("ports", "", "Ports to scan (comma-separated, e.g., 80,443,8080)")
 	flag.IntVar(&config.MaxPages, "max-pages", 50, "Maximum pages to crawl")
 	flag.IntVar(&config.MaxDepth, "max-depth", 3, "Maximum crawl depth")
 	flag.IntVar(&config.Workers, "workers", 10, "Number of concurrent workers")
 	timeout := flag.Int("timeout", 30, "Timeout in seconds")
-	flag.StringVar(&config.OutputDir, "output", "./scan-results", "Output directory")
-	
+	flag.StringVar(&config.OutputDir, "output", "./scan-output", "Output directory")
+
 	// Scan toggles
 	flag.BoolVar(&config.ScanXSS, "xss", true, "Enable XSS scanning")
 	flag.BoolVar(&config.ScanAssets, "assets", true, "Enable asset discovery")
@@ -159,12 +399,38 @@ func parseFlags() ScanConfig {
 	flag.BoolVar(&config.ScanPlatform, "platform", true, "Enable platform detection")
 	flag.BoolVar(&config.DeepCrawl, "deep-crawl", true, "Enable deep crawling")
 	flag.BoolVar(&config.Verbose, "verbose", false, "Verbose output")
-	
+
+	// WAF Bypass options
+	flag.BoolVar(&config.WAFBypass, "waf-bypass", false, "Enable WAF bypass mode with adaptive payloads")
+	flag.StringVar(&config.WAFType, "waf-type", "", "Force specific WAF type (cloudflare, akamai, imperva, modsecurity, aws-waf, sucuri)")
+	flag.StringVar(&config.ElementFocus, "element-focus", "", "Focus on specific elements (script,img,div,span)")
+	flag.IntVar(&config.EncodingLevel, "encoding-level", 3, "Encoding aggressiveness (1-5, higher=more aggressive)")
+	flag.BoolVar(&config.ATOCheck, "ato-check", false, "Include Account Takeover detection")
+	flag.BoolVar(&config.CWEAll, "cwe-all", false, "Check all 25 CWEs")
+
+	// Workflow options
+	flag.StringVar(&config.WorkflowFile, "workflow", "", "Run a workflow file (YAML or JSON)")
+	workflowVarsStr := flag.String("var", "", "Workflow variables (key=value,key2=value2)")
+
+	// Browser automation script options
+	flag.StringVar(&config.ScriptFile, "script", "", "Run a browser automation script (YAML or JSON)")
+	flag.BoolVar(&config.ScriptHeadless, "headless", true, "Run browser in headless mode (default: true)")
+
 	flag.Parse()
-	
-	// Validation
-	if config.Target == "" {
-		fmt.Fprintln(os.Stderr, "Error: -target is required")
+
+	// Parse workflow variables
+	if *workflowVarsStr != "" {
+		for _, kv := range strings.Split(*workflowVarsStr, ",") {
+			parts := strings.SplitN(kv, "=", 2)
+			if len(parts) == 2 {
+				config.WorkflowVars[strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+			}
+		}
+	}
+
+	// Validation - target required unless workflow or script mode
+	if config.Target == "" && config.WorkflowFile == "" && config.ScriptFile == "" {
+		fmt.Fprintln(os.Stderr, "Error: -target is required (or use -workflow/-script for automation mode)")
 		flag.Usage()
 		os.Exit(1)
 	}
@@ -196,7 +462,7 @@ func parseFlags() ScanConfig {
 }
 
 func printBanner() {
-	fmt.Println(`
+	fmt.Print(`
     ╔═══════════════════════════════════════════════════════════╗
     ║                                                           ║
     ║     ÆGIS - COMPLETE SECURITY SCANNER                      ║
@@ -280,6 +546,116 @@ func runCompleteScan(ctx context.Context, config ScanConfig) CompleteReport {
 		}
 	}
 	
+	// 3a. DOM XSS Scanning (The Kitchen Sink)
+	if config.ScanXSS {
+		fmt.Println("[3a/8] DOM XSS Analysis (Kitchen Sink)...")
+		domAnalyzer, err := xss.NewDOMXSSAnalyzer()
+		if err == nil {
+			// Get content for main target
+			acquirer, _ := content.NewAcquirer(content.WithTimeout(config.Timeout))
+			if acquirer != nil {
+				defer acquirer.Close()
+				acquired, _ := acquirer.Acquire(config.Target)
+				if acquired != nil {
+					findings := domAnalyzer.AnalyzeContent(acquired.HTML, config.Target)
+					report.DOMXSS = &xss.DOMXSSReport{
+						ScanDir:  config.Target,
+						Findings: findings,
+					}
+					
+					// Also scan other discovered pages
+					for i, page := range report.Pages {
+						if i >= 5 { break } // Limit to first 5 additional pages
+						pContent, _ := acquirer.Acquire(page.URL)
+						if pContent != nil {
+							pFindings := domAnalyzer.AnalyzeContent(pContent.HTML, page.URL)
+							report.DOMXSS.Findings = append(report.DOMXSS.Findings, pFindings...)
+						}
+					}
+					
+					// Calculate totals for reporting
+					for _, f := range report.DOMXSS.Findings {
+						if f.PatternType == "sink" {
+							switch f.Severity {
+							case "CRITICAL": report.DOMXSS.CriticalFindings++
+							case "HIGH": report.DOMXSS.HighFindings++
+							case "MEDIUM": report.DOMXSS.MediumFindings++
+							}
+						}
+					}
+					
+					fmt.Printf("    [+] Found %d potential DOM XSS patterns\n", len(report.DOMXSS.Findings))
+					fmt.Printf("        - Critical: %d, High: %d\n", report.DOMXSS.CriticalFindings, report.DOMXSS.HighFindings)
+				}
+			}
+		}
+	}
+
+	// 3b. Enhanced XSS Scanning with WAF Bypass
+	if config.ScanXSS && config.WAFBypass {
+		fmt.Println("[3b/8] Enhanced XSS Scanning with WAF Bypass...")
+
+		// Parse WAF type if specified
+		var wafType waf.WAFType = waf.WAFUnknown
+		if config.WAFType != "" {
+			wafType = parseWAFType(config.WAFType)
+		}
+
+		// Parse element focus
+		var elements []waf.ElementType
+		if config.ElementFocus != "" {
+			for _, e := range strings.Split(config.ElementFocus, ",") {
+				elements = append(elements, waf.ElementType(strings.TrimSpace(e)))
+			}
+		}
+
+		// Create enhanced scanner
+		scannerOpts := []xss.EnhancedScannerOption{
+			xss.WithEnhancedTimeout(config.Timeout),
+			xss.WithWAFBypass(true),
+			xss.WithEncodingLevel(waf.EncodingLevel(config.EncodingLevel)),
+			xss.WithVerbose(config.Verbose),
+		}
+		if wafType != waf.WAFUnknown {
+			scannerOpts = append(scannerOpts, xss.WithWAFType(wafType))
+		}
+		if len(elements) > 0 {
+			scannerOpts = append(scannerOpts, xss.WithElements(elements...))
+		}
+
+		enhancedScanner, err := xss.NewEnhancedScanner(scannerOpts...)
+		if err == nil {
+			defer enhancedScanner.Close()
+			scanResult, err := enhancedScanner.ScanWithBypassContext(ctx, config.Target)
+			if err == nil {
+				report.EnhancedXSS = scanResult
+				report.WAFDetection = scanResult.WAFDetection
+				fmt.Printf("    [+] Tested %d payloads\n", scanResult.TestedPayloads)
+				fmt.Printf("    [+] Found %d XSS vulnerabilities with WAF bypass\n", len(scanResult.Findings))
+				if scanResult.WAFDetection != nil {
+					fmt.Printf("    [!] WAF Detected: %s (confidence: %d%%)\n",
+						scanResult.WAFDetection.WAFType.String(), scanResult.WAFDetection.Confidence)
+				}
+			}
+		}
+	}
+
+	// 3c. Account Takeover (ATO) Detection
+	if config.ATOCheck {
+		fmt.Println("[3c/8] Account Takeover Detection...")
+		atoDetector := ato.NewDetector(ato.WithTimeout(config.Timeout))
+		atoFindings := atoDetector.DetectAllWithContext(ctx, config.Target)
+		report.ATOFindings = atoFindings
+		if len(atoFindings) > 0 {
+			fmt.Printf("    [!] Found %d ATO vulnerabilities\n", len(atoFindings))
+			for _, f := range atoFindings {
+				fmt.Printf("        - [%s] %s: %s\n", f.Severity, f.Type, f.Description)
+			}
+		} else {
+			fmt.Println("    [+] No ATO vulnerabilities detected")
+		}
+	}
+
 	// 4. Asset Discovery
 	if config.ScanAssets {
 		fmt.Println("[4/8] Asset Discovery...")
@@ -434,23 +810,26 @@ func runCompleteScan(ctx context.Context, config ScanConfig) CompleteReport {
 func calculateSummary(report CompleteReport) Summary {
 	summary := Summary{}
 	
-	// Count XSS
+	// Count XSS (Reflected)
 	summary.TotalXSS = len(report.XSS)
 	for _, f := range report.XSS {
 		switch f.Severity {
-		case "CRITICAL":
-			summary.SeverityCounts.Critical++
-		case "HIGH":
-			summary.SeverityCounts.High++
-		case "MEDIUM":
-			summary.SeverityCounts.Medium++
-		case "LOW":
-			summary.SeverityCounts.Low++
-		default:
-			summary.SeverityCounts.Info++
+		case "CRITICAL": summary.SeverityCounts.Critical++
+		case "HIGH":     summary.SeverityCounts.High++
+		case "MEDIUM":   summary.SeverityCounts.Medium++
+		case "LOW":      summary.SeverityCounts.Low++
+		default:         summary.SeverityCounts.Info++
 		}
 	}
 	
+	// Count DOM XSS
+	if report.DOMXSS != nil {
+		summary.TotalDOMXSS = len(report.DOMXSS.Findings)
+		summary.SeverityCounts.Critical += report.DOMXSS.CriticalFindings
+		summary.SeverityCounts.High += report.DOMXSS.HighFindings
+		summary.SeverityCounts.Medium += report.DOMXSS.MediumFindings
+	}
+
 	// Count Assets
 	if report.Assets != nil {
 		summary.TotalAssets = report.Assets.TotalCount
@@ -500,15 +879,110 @@ func calculateSummary(report CompleteReport) Summary {
 	
 	// Count EOL
 	summary.TotalEOL = len(report.EOL)
-	
+
+	// Count Enhanced XSS
+	if report.EnhancedXSS != nil {
+		summary.TotalEnhancedXSS = len(report.EnhancedXSS.Findings)
+		for _, f := range report.EnhancedXSS.Findings {
+			switch f.Severity {
+			case "CRITICAL":
+				summary.SeverityCounts.Critical++
+			case "HIGH":
+				summary.SeverityCounts.High++
+			case "MEDIUM":
+				summary.SeverityCounts.Medium++
+			case "LOW":
+				summary.SeverityCounts.Low++
+			default:
+				summary.SeverityCounts.Info++
+			}
+		}
+		// Track WAF bypass success
+		for _, f := range report.EnhancedXSS.Findings {
+			if f.WAFBypassed {
+				summary.WAFBypassed = true
+				break
+			}
+		}
+	}
+
+	// Count ATO
+	summary.TotalATO = len(report.ATOFindings)
+	for _, f := range report.ATOFindings {
+		switch f.Severity {
+		case "CRITICAL":
+			summary.SeverityCounts.Critical++
+		case "HIGH":
+			summary.SeverityCounts.High++
+		case "MEDIUM":
+			summary.SeverityCounts.Medium++
+		case "LOW":
+			summary.SeverityCounts.Low++
+		default:
+			summary.SeverityCounts.Info++
+		}
+	}
+
+	// Record WAF detection
+	if report.WAFDetection != nil && report.WAFDetection.WAFType != waf.WAFUnknown {
+		summary.WAFDetected = report.WAFDetection.WAFType.String()
+	}
+
 	return summary
+}
+
+// parseWAFType converts a string to WAFType
+func parseWAFType(s string) waf.WAFType {
+	switch strings.ToLower(s) {
+	case "cloudflare":
+		return waf.WAFCloudflare
+	case "akamai":
+		return waf.WAFAkamai
+	case "kona", "akamai-kona":
+		return waf.WAFKona
+	case "imperva":
+		return waf.WAFImperva
+	case "incapsula":
+		return waf.WAFIncapsula
+	case "modsecurity":
+		return waf.WAFModSecurity
+	case "aws-waf", "aws", "awswaf":
+		return waf.WAFAFW
+	case "sucuri":
+		return waf.WAFSuccuri
+	case "barracuda":
+		return waf.WAFBarracuda
+	case "citrix", "citrix-adc", "netscaler":
+		return waf.WAFCitrix
+	case "nginx", "naxsi", "nginx-naxsi":
+		return waf.WAFNginx
+	case "stackpath":
+		return waf.WAFStackPath
+	case "f5", "big-ip", "bigip", "asm":
+		return waf.WAFBIG_IP_ASM
+	case "fortiweb":
+		return waf.WAFFortiWeb
+	case "radware":
+		return waf.WAFRadware
+	case "wordfence":
+		return waf.WAFWordfence
+	default:
+		return waf.WAFUnknown
+	}
 }
 
 func printSummary(summary Summary) {
 	fmt.Println("\n" + strings.Repeat("=", 60))
 	fmt.Println("SCAN SUMMARY")
 	fmt.Println(strings.Repeat("=", 60))
-	fmt.Printf("XSS Vulnerabilities:       %d\n", summary.TotalXSS)
+	fmt.Printf("Reflected XSS Findings:    %d\n", summary.TotalXSS)
+	fmt.Printf("DOM XSS Patterns:          %d\n", summary.TotalDOMXSS)
+	if summary.TotalEnhancedXSS > 0 {
+		fmt.Printf("Enhanced XSS (WAF Bypass): %d\n", summary.TotalEnhancedXSS)
+	}
+	if summary.TotalATO > 0 {
+		fmt.Printf("ATO Vulnerabilities:       %d\n", summary.TotalATO)
+	}
 	fmt.Printf("Assets Discovered:         %d\n", summary.TotalAssets)
 	fmt.Printf("API Endpoints:             %d\n", summary.TotalAPIs)
 	fmt.Printf("Pages Crawled:             %d\n", summary.TotalPages)
@@ -516,6 +990,13 @@ func printSummary(summary Summary) {
 	fmt.Printf("OWASP Violations:          %d\n", summary.TotalOWASP)
 	fmt.Printf("EOL Frameworks:            %d\n", summary.TotalEOL)
 	fmt.Println(strings.Repeat("-", 60))
+	if summary.WAFDetected != "" {
+		fmt.Printf("WAF Detected:              %s\n", summary.WAFDetected)
+		if summary.WAFBypassed {
+			fmt.Println("WAF Bypass:                SUCCESS")
+		}
+		fmt.Println(strings.Repeat("-", 60))
+	}
 	fmt.Println("SEVERITY BREAKDOWN")
 	fmt.Printf("  Critical: %d\n", summary.SeverityCounts.Critical)
 	fmt.Printf("  High:     %d\n", summary.SeverityCounts.High)
@@ -529,8 +1010,19 @@ func outputResults(report CompleteReport, config ScanConfig) error {
 	// Create output directory if it doesn't exist
 	if _, err := os.Stat(config.OutputDir); os.IsNotExist(err) {
 		if err := os.MkdirAll(config.OutputDir, 0755); err != nil {
-			return fmt.Errorf("failed to create output directory: %w", err)
+			// If it still fails, try to use current directory as fallback
+			fmt.Printf("[!] Warning: Failed to create output directory %s: %v. Using current directory.\n", config.OutputDir, err)
+			config.OutputDir = "."
 		}
+	}
+	
+	// Final check - ensure we can write to whatever OutputDir is now
+	testFile := filepath.Join(config.OutputDir, ".write_test")
+	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
+		fmt.Printf("[!] Warning: Cannot write to %s: %v. Falling back to /tmp.\n", config.OutputDir, err)
+		config.OutputDir = os.TempDir()
+	} else {
+		os.Remove(testFile)
 	}
 	
 	// Generate filename

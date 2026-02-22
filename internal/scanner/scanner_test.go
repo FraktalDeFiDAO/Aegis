@@ -218,9 +218,9 @@ func TestScannerDeduplication(t *testing.T) {
 		t.Fatalf("Scan failed: %v", err)
 	}
 
-	// Should have 2 findings (different files)
-	if len(findings) != 2 {
-		t.Errorf("Expected 2 findings (different files), got %d", len(findings))
+	// Deduplication is cross-file by type/summary/value, so identical findings collapse to one.
+	if len(findings) != 1 {
+		t.Errorf("Expected 1 deduplicated finding, got %d", len(findings))
 	}
 
 	// All findings should have unique hashes

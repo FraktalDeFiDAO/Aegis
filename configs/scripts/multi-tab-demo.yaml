@@ -1,0 +1,168 @@
+# Browser Automation Script - Multi-Tab Demo
+# Usage: aegis-scan --script configs/scripts/multi-tab-demo.yaml --headless=false
+
+name: "Multi-Tab Demo"
+description: "Demonstrates opening and switching between multiple browser tabs"
+version: "1.0.0"
+
+variables:
+  site1: "https://example.com"
+  site2: "https://httpbin.org"
+  site3: "https://www.google.com"
+
+settings:
+  headless: false
+  timeout: "30s"
+  slow_motion: "500ms"
+  viewport:
+    width: 1280
+    height: 800
+
+actions:
+  # Start on main tab
+  - id: main_navigate
+    name: "Navigate main tab to example.com"
+    type: navigate
+    url: "{{site1}}"
+
+  - type: wait_for_load
+
+  - id: main_screenshot
+    name: "Screenshot: Main tab"
+    type: screenshot
+    path: "./screenshots/tab1_example.png"
+
+  - id: main_title
+    name: "Get main tab title"
+    type: evaluate
+    script: "document.title"
+    variable: "tab1_title"
+
+  - type: log
+    value: "Tab 1 Title: {{tab1_title}}"
+
+  # Open second tab
+  - id: open_tab2
+    name: "Open new tab for httpbin"
+    type: new_tab
+    url: "{{site2}}"
+    variable: "httpbin_tab"
+
+  - type: wait_for_load
+
+  - id: tab2_screenshot
+    name: "Screenshot: HTTPBin tab"
+    type: screenshot
+    path: "./screenshots/tab2_httpbin.png"
+
+  - id: tab2_title
+    name: "Get httpbin tab title"
+    type: evaluate
+    script: "document.title"
+    variable: "tab2_title"
+
+  - type: log
+    value: "Tab 2 Title: {{tab2_title}}"
+
+  # Open third tab
+  - id: open_tab3
+    name: "Open new tab for Google"
+    type: new_tab
+    url: "{{site3}}"
+    variable: "google_tab"
+
+  - type: wait_for_load
+
+  - id: tab3_screenshot
+    name: "Screenshot: Google tab"
+    type: screenshot
+    path: "./screenshots/tab3_google.png"
+
+  - id: tab3_title
+    name: "Get Google tab title"
+    type: evaluate
+    script: "document.title"
+    variable: "tab3_title"
+
+  - type: log
+    value: "Tab 3 Title: {{tab3_title}}"
+
+  # List all tabs
+  - id: list_tabs
+    name: "Get all open tabs"
+    type: get_tabs
+    variable: "all_tabs"
+
+  - type: log
+    value: "All tabs retrieved"
+
+  # Switch back to main tab
+  - id: switch_to_main
+    name: "Switch back to main tab"
+    type: switch_tab
+    value: "main"
+
+  - type: wait
+    duration: "1s"
+
+  - id: verify_main
+    name: "Verify we're on main tab"
+    type: evaluate
+    script: "window.location.href"
+    variable: "current_url"
+
+  - type: log
+    value: "Switched back to: {{current_url}}"
+
+  # Switch to httpbin tab
+  - id: switch_to_httpbin
+    name: "Switch to httpbin tab"
+    type: switch_tab
+    value: "httpbin_tab"
+
+  - type: wait
+    duration: "1s"
+
+  - id: httpbin_action
+    name: "Do something on httpbin"
+    type: navigate
+    url: "https://httpbin.org/headers"
+
+  - type: wait_for_load
+
+  - id: headers_screenshot
+    name: "Screenshot: HTTPBin headers"
+    type: screenshot
+    path: "./screenshots/tab2_headers.png"
+
+  # Close httpbin tab
+  - id: close_httpbin
+    name: "Close httpbin tab"
+    type: close_tab
+    value: "httpbin_tab"
+
+  - type: wait
+    duration: "1s"
+
+  # Final tab list
+  - id: final_tabs
+    name: "Get remaining tabs"
+    type: get_tabs
+    variable: "remaining_tabs"
+
+  - type: log
+    value: "Remaining tabs after close"
+
+  - id: final_screenshot
+    name: "Final screenshot"
+    type: screenshot
+    path: "./screenshots/final_state.png"
+
+  - type: log
+    value: "Multi-tab demo complete!"
+
+on_error:
+  - type: screenshot
+    path: "./screenshots/error.png"
+  - type: log
+    value: "Script encountered an error"

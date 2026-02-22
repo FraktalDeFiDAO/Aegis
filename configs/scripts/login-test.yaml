@@ -1,0 +1,134 @@
+# Browser Automation Script - Login Flow Testing
+# Usage: aegis-scan --script configs/scripts/login-test.yaml --var "target=https://example.com,username=test,password=test123"
+
+name: "Login Flow Test"
+description: "Tests login functionality including form submission and session handling"
+version: "1.0.0"
+
+variables:
+  target: "https://example.com"
+  username: "testuser"
+  password: "testpassword"
+  login_path: "/login"
+
+settings:
+  headless: true
+  timeout: "30s"
+  viewport:
+    width: 1920
+    height: 1080
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"
+  screenshots_dir: "./screenshots"
+  slow_motion: "100ms"
+
+actions:
+  # Navigate to target
+  - id: navigate
+    name: "Navigate to login page"
+    type: navigate
+    url: "{{target}}{{login_path}}"
+
+  # Wait for page to load
+  - id: wait_load
+    name: "Wait for page load"
+    type: wait_for_load
+
+  # Take initial screenshot
+  - id: screenshot_initial
+    name: "Screenshot: Initial state"
+    type: screenshot
+    path: "./screenshots/01_login_page.png"
+
+  # Check login form exists
+  - id: assert_form
+    name: "Verify login form exists"
+    type: assert_exists
+    selector: "form[action*='login'], form#login, form.login-form"
+    optional: true
+
+  # Extract CSRF token if present
+  - id: extract_csrf
+    name: "Extract CSRF token"
+    type: extract_attribute
+    selector: "input[name='csrf'], input[name='_token'], input[name='authenticity_token']"
+    attribute: "value"
+    variable: "csrf_token"
+    optional: true
+
+  # Fill username
+  - id: fill_username
+    name: "Fill username field"
+    type: fill
+    selector: "input[name='username'], input[name='email'], input#username, input#email"
+    value: "{{username}}"
+
+  # Fill password
+  - id: fill_password
+    name: "Fill password field"
+    type: fill
+    selector: "input[name='password'], input#password, input[type='password']"
+    value: "{{password}}"
+
+  # Screenshot before submit
+  - id: screenshot_filled
+    name: "Screenshot: Form filled"
+    type: screenshot
+    path: "./screenshots/02_form_filled.png"
+
+  # Submit form
+  - id: submit
+    name: "Submit login form"
+    type: click
+    selector: "button[type='submit'], input[type='submit'], button:contains('Login'), button:contains('Sign in')"
+
+  # Wait for navigation
+  - id: wait_nav
+    name: "Wait for navigation after login"
+    type: wait_for_navigation
+    timeout: "10s"
+
+  # Screenshot after login
+  - id: screenshot_after
+    name: "Screenshot: After login"
+    type: screenshot
+    path: "./screenshots/03_after_login.png"
+
+  # Check for successful login indicators
+  - id: check_success
+    name: "Check for success indicators"
+    type: assert_exists
+    selector: ".dashboard, .profile, .logout, [href*='logout'], .welcome"
+    optional: true
+
+  # Check for error messages
+  - id: check_error
+    name: "Check for error messages"
+    type: extract_text
+    selector: ".error, .alert-danger, .error-message, .login-error"
+    variable: "error_message"
+    optional: true
+
+  # Extract session cookies
+  - id: get_cookies
+    name: "Get session cookies"
+    type: get_cookies
+    variable: "session_cookies"
+
+  # Get current URL
+  - id: check_url
+    name: "Verify redirect URL"
+    type: evaluate
+    script: "window.location.href"
+    variable: "current_url"
+
+  # Log result
+  - id: log_result
+    name: "Log login result"
+    type: log
+    value: "Login attempt completed. URL: {{current_url}}"
+
+on_error:
+  - type: screenshot
+    path: "./screenshots/error_state.png"
+  - type: log
+    value: "Login test failed - screenshot captured"

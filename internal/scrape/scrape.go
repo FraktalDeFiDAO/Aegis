@@ -536,9 +536,11 @@ func (s *Scraper) processRenderedPage(browser *rod.Browser, pageURL string, outp
 	for _, imp := range record.Imports {
 		discovered = append(discovered, s.downloadResource(imp, pageURL, outputDir, "import")...)
 	}
-	record.Links = uniqueStrings(append(record.Links, discovered...))
-	if s.cfg.MaxLinksPerPage > 0 && len(record.Links) > s.cfg.MaxLinksPerPage {
-		record.Links = record.Links[:s.cfg.MaxLinksPerPage]
+	record.Imports = uniqueStrings(append(record.Imports, discovered...))
+	if s.store != nil {
+		for _, imp := range discovered {
+			_ = s.store.RecordAsset(imp, "import", pageURL, "")
+		}
 	}
 
 	return nil
@@ -571,9 +573,11 @@ func (s *Scraper) processStaticPage(pageURL string, outputDir string, htmlConten
 	for _, imp := range record.Imports {
 		discovered = append(discovered, s.downloadResource(imp, pageURL, outputDir, "import")...)
 	}
-	record.Links = uniqueStrings(append(record.Links, discovered...))
-	if s.cfg.MaxLinksPerPage > 0 && len(record.Links) > s.cfg.MaxLinksPerPage {
-		record.Links = record.Links[:s.cfg.MaxLinksPerPage]
+	record.Imports = uniqueStrings(append(record.Imports, discovered...))
+	if s.store != nil {
+		for _, imp := range discovered {
+			_ = s.store.RecordAsset(imp, "import", pageURL, "")
+		}
 	}
 
 	if s.cfg.EnableScreenshot {

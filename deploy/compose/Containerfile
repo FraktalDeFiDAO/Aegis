@@ -11,7 +11,7 @@ COPY . .
 RUN go mod tidy && go mod vendor
 RUN goimports -w .
 
-RUN CGO_ENABLED=0 go build -mod=vendor -o /agent/bin/aegis ./cmd/aegis/
+RUN CGO_ENABLED=0 go build -mod=vendor -o .agents/bin/aegis ./cmd/aegis/
 
 FROM registry.fedoraproject.org/fedora:41
 RUN dnf -y install \
@@ -47,6 +47,6 @@ RUN dnf -y install \
   && dnf clean all \
   && rm -rf /var/cache/dnf
 
-COPY --from=builder /agent/bin/aegis /usr/local/bin/aegis
+COPY --from=builder .agents/bin/aegis /usr/local/bin/aegis
 
 ENTRYPOINT ["/usr/local/bin/aegis"]

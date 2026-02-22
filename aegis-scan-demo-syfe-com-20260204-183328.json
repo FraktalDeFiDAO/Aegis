@@ -1,0 +1,51 @@
+{
+  "scan_info": {
+    "started_at": "2026-02-04T18:33:26.198608397Z",
+    "duration": 2702453971,
+    "scanner_version": "1.0.0"
+  },
+  "target": {
+    "url": "https://demo.syfe.com",
+    "host": "demo.syfe.com",
+    "ports": [
+      80,
+      443,
+      6379,
+      27017,
+      9200,
+      9300,
+      8080,
+      8443
+    ]
+  },
+  "asset_discovery": {
+    "base_url": "https://demo.syfe.com",
+    "assets": [],
+    "total_count": 0,
+    "by_type": {},
+    "total_size": 0
+  },
+  "api_endpoints": {
+    "base_url": "https://demo.syfe.com",
+    "endpoints": [],
+    "total_count": 0
+  },
+  "summary": {
+    "total_xss": 0,
+    "total_dom_xss": 0,
+    "total_assets": 0,
+    "total_apis": 0,
+    "total_pages": 0,
+    "total_exploitable": 0,
+    "total_owasp": 0,
+    "total_eol": 0,
+    "severity_counts": {
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0,
+      "info": 0
+    }
+  },
+  "generated_at": "2026-02-04T18:33:28.901062549Z"
+}

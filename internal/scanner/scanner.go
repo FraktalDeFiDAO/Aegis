@@ -141,8 +141,15 @@ func isValidTextFile(ext string) bool {
 func (s *Scanner) scanContent(content, filePath string) []Finding {
 	var findings []Finding
 	lines := strings.Split(content, "\n")
+	isHTML := strings.HasSuffix(filePath, ".html") || strings.HasSuffix(filePath, ".htm")
+	inScript := false
 
 	for lineNum, line := range lines {
+		lineLower := strings.ToLower(line)
+		lineHasScriptOpen := isHTML && strings.Contains(lineLower, "<script")
+		lineHasScriptClose := isHTML && strings.Contains(lineLower, "</script")
+		inlineScript := !isHTML || inScript || lineHasScriptOpen
+
 		// Secret Checks
 		for desc, pattern := range secretPatterns {
 			if match := pattern.FindStringSubmatch(line); len(match) > 1 {
@@ -163,8 +170,8 @@ func (s *Scanner) scanContent(content, filePath string) []Finding {
 
 		// Vulnerability Checks
 		for name, info := range vulnPatterns {
-			// Skip JS-specific patterns in HTML unless they are very likely to be inline scripts
-			if strings.HasSuffix(filePath, ".html") || strings.HasSuffix(filePath, ".htm") {
+			// Skip JS-specific patterns in HTML unless they are very likely to be inline scripts.
+			if isHTML && !inlineScript {
 				if name == "DOM-based XSS (innerHTML)" || name == "Insecure Random" {
 					continue
 				}
@@ -184,6 +191,15 @@ func (s *Scanner) scanContent(content, filePath string) []Finding {
 					References:  info.references,
 				}
 				findings = append(findings, finding)
+			}
+		}
+
+		if isHTML {
+			if lineHasScriptOpen {
+				inScript = true
+			}
+			if lineHasScriptClose {
+				inScript = false
 			}
 		}
 
@@ -232,7 +248,7 @@ var secretPatterns = map[string]*regexp.Regexp{
 	"Google API Key":  regexp.MustCompile(`(AIza[0-9A-Za-z_-]{35})`),
 	"Azure Key":       regexp.MustCompile(`(?i)azure[_-]?key["\s:=]+[\s]*["']?([A-Za-z0-9_\-]{32,})["']?`),
 	"GitHub Token":    regexp.MustCompile(`(ghp_[a-zA-Z0-9]{36}|gho_[a-zA-Z0-9]{36}|ghu_[a-zA-Z0-9]{36}|ghs_[a-zA-Z0-9]{36}|ghr_[a-zA-Z0-9]{36})`),
-	"Slack Token":     regexp.MustCompile(`(xox[baprs]-[0-9a-zA-Z]{10,48})`),
+		"Slack Token":     regexp.MustCompile(`(xox[baprs]-[0-9a-zA-Z-]{10,100})`),
 	"Slack Webhook":   regexp.MustCompile(`(https://hooks\.slack\.com/services/T[a-zA-Z0-9_]{8}/B[a-zA-Z0-9_]{8}/[a-zA-Z0-9_]{24})`),
 	"Discord Webhook": regexp.MustCompile(`(https://discord(?:app)?\.com/api/webhooks/[0-9]{18,20}/[a-zA-Z0-9_-]{68})`),
 	"Stripe Key":      regexp.MustCompile(`(sk_live_[0-9a-zA-Z]{24}|pk_live_[0-9a-zA-Z]{24})`),
@@ -332,8 +348,8 @@ var vulnPatterns = map[string]vulnInfo{
 		remediation: "Always set Secure, HttpOnly, and SameSite flags on cookies",
 		references:  []string{"https://cwe.mitre.org/data/definitions/614.html"},
 	},
-	"SQL Injection Pattern": {
-		regex:       regexp.MustCompile(`(?i)\b(?:SELECT|INSERT|UPDATE|DELETE|DROP|UNION)\b.*\b(?:\$_(?:GET|POST|REQUEST)|req\.|request\.|params|query|db\.)`),
+		"SQL Injection Pattern": {
+			regex:       regexp.MustCompile(`(?i)\b(?:SELECT|INSERT|UPDATE|DELETE|DROP|UNION)\b.*(?:\$_(?:GET|POST|REQUEST)|req\.|request\.|params|query|db\.)`),
 		severity:    "CRITICAL",
 		cvss:        9.8,
 		cwe:         "CWE-89",

