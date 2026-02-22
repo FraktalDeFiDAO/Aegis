@@ -1,17 +1,22 @@
 package session
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+
+	"github.com/go-rod/rod/lib/proto"
 )
 
 func TestSessionManagerInitialization(t *testing.T) {
 	tempDir := t.TempDir()
 	sessionPath := filepath.Join(tempDir, "session.json")
-	
+
 	key := []byte("01234567890123456789012345678901")
 	mgr := NewSessionManager(sessionPath, key)
-	
+
 	if mgr.Path() != sessionPath {
 		t.Errorf("Expected path to be '%s', got '%s'", sessionPath, mgr.Path())
 	}
@@ -48,5 +53,49 @@ func TestEncryptionDecryption(t *testing.T) {
 	_, err = decrypt([]byte("too short"), key)
 	if err == nil {
 		t.Error("Expected error for short ciphertext, got nil")
+	}
+}
+
+func TestSessionManagerWriteRead(t *testing.T) {
+	tempDir := t.TempDir()
+	sessionPath := filepath.Join(tempDir, "session.json")
+	key := []byte("01234567890123456789012345678901")
+
+	mgr := NewSessionManager(sessionPath, key)
+	expected := sessionLock{
+		Cookies: []*proto.NetworkCookieParam{
+			{Name: "sid", Value: "abc123", Domain: "example.com", Path: "/"},
+		},
+		LocalStorage: map[string]string{"token": "local-123"},
+		SessionStorage: map[string]string{
+			"session": "value",
+		},
+	}
+
+	if err := mgr.write(expected); err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	plaintext, err := json.MarshalIndent(expected, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+
+	raw, err := os.ReadFile(sessionPath)
+	if err != nil {
+		t.Fatalf("read failed: %v", err)
+	}
+
+	if len(raw) <= len(plaintext) {
+		t.Errorf("expected encrypted session data to be larger than plaintext")
+	}
+
+	got, err := mgr.read()
+	if err != nil {
+		t.Fatalf("read failed: %v", err)
+	}
+
+	if !reflect.DeepEqual(got, expected) {
+		t.Errorf("session data mismatch: got %#v want %#v", got, expected)
 	}
 }

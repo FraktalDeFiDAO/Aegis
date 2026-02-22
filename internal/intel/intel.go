@@ -19,9 +19,9 @@ type ThreatFeed struct {
 // IntelManager coordinates the lifecycle of threat intelligence data,
 // including fetching, caching, and querying.
 type IntelManager struct {
-	feeds  []ThreatFeed
-	cache  sync.Map
-	log    *logger.Logger
+	feeds []ThreatFeed
+	cache sync.Map
+	log   *logger.Logger
 }
 
 // NewIntelManager initializes an IntelManager with default threat feeds.
@@ -58,6 +58,49 @@ func (m *IntelManager) FetchUpdates() error {
 
 // IsMalicious checks if a URL is known in the threat cache
 func (m *IntelManager) IsMalicious(targetURL string) bool {
-	// Logic to check against cached intel
-	return false 
+	if targetURL == "" {
+		return false
+	}
+
+	found := false
+	m.cache.Range(func(_, value interface{}) bool {
+		if containsTarget(value, targetURL) {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+func containsTarget(value interface{}, target string) bool {
+	switch v := value.(type) {
+	case string:
+		return v == target
+	case []interface{}:
+		for _, item := range v {
+			if containsTarget(item, target) {
+				return true
+			}
+		}
+	case map[string]interface{}:
+		for _, item := range v {
+			if containsTarget(item, target) {
+				return true
+			}
+		}
+	case []string:
+		for _, item := range v {
+			if item == target {
+				return true
+			}
+		}
+	case map[string]string:
+		for _, item := range v {
+			if item == target {
+				return true
+			}
+		}
+	}
+	return false
 }

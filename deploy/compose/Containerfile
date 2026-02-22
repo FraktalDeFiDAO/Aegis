@@ -11,11 +11,42 @@ COPY . .
 RUN go mod tidy && go mod vendor
 RUN goimports -w .
 
-RUN CGO_ENABLED=0 go build -mod=vendor -o /agent/bin/aegis ./cmd/aegis/
+RUN CGO_ENABLED=0 go build -mod=vendor -o .agents/bin/aegis ./cmd/aegis/
 
 FROM registry.fedoraproject.org/fedora:41
-RUN dnf -y install ca-certificates && dnf clean all && rm -rf /var/cache/dnf
+RUN dnf -y install \
+    alsa-lib \
+    at-spi2-atk \
+    atk \
+    cairo \
+    ca-certificates \
+    cups-libs \
+    dbus-glib \
+    glib2 \
+    gtk3 \
+    libX11 \
+    libXcomposite \
+    libXcursor \
+    libXdamage \
+    libXext \
+    libXfixes \
+    libXi \
+    libXrandr \
+    libXrender \
+    libXScrnSaver \
+    libXtst \
+    libxcb \
+    libxkbcommon \
+    libxkbcommon-x11 \
+    libdrm \
+    mesa-libgbm \
+    nss \
+    pango \
+    xorg-x11-fonts-Type1 \
+    xorg-x11-fonts-misc \
+  && dnf clean all \
+  && rm -rf /var/cache/dnf
 
-COPY --from=builder /agent/bin/aegis /usr/local/bin/aegis
+COPY --from=builder .agents/bin/aegis /usr/local/bin/aegis
 
 ENTRYPOINT ["/usr/local/bin/aegis"]

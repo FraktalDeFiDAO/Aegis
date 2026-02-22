@@ -1,0 +1,108 @@
+# XSS Scanning Workflow with WAF Bypass
+# Usage: aegis workflow run -f xss-waf-bypass.yaml --target https://example.com
+
+name: "XSS WAF Bypass Workflow"
+description: "Comprehensive XSS scanning with automatic WAF detection and bypass"
+version: "1.0.0"
+author: "security-team"
+
+variables:
+  default_timeout: "30s"
+  max_pages: "50"
+  encoding_level: "3"
+
+steps:
+  # Step 1: Detect WAF
+  - id: waf_detect
+    name: "Detect WAF"
+    type: waf_detect
+    config:
+      target: "{{target}}"
+      timeout: "{{default_timeout}}"
+    continue_on: always
+
+  # Step 2: Crawl target
+  - id: crawl
+    name: "Crawl Target"
+    type: crawl
+    config:
+      target: "{{target}}"
+      max_depth: 3
+      max_pages: "{{max_pages}}"
+      follow_redirects: true
+      headers:
+        User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"
+    timeout: "5m"
+
+  # Step 3: Basic XSS scan
+  - id: xss_basic
+    name: "Basic XSS Scan"
+    type: xss
+    config:
+      target: "{{target}}"
+      waf_bypass: false
+      element_focus:
+        - script
+        - img
+    depends_on:
+      - crawl
+
+  # Step 4: Enhanced XSS with WAF bypass
+  - id: xss_bypass
+    name: "XSS with WAF Bypass"
+    type: xss
+    config:
+      target: "{{target}}"
+      waf_bypass: true
+      encoding_level: "{{encoding_level}}"
+      element_focus:
+        - script
+        - img
+        - svg
+        - div
+        - span
+      custom_payloads:
+        - "<script>alert(1)</script>"
+        - "<img src=x onerror=alert`1`>"
+        - "<svg/onload=alert(1)>"
+    depends_on:
+      - crawl
+    timeout: "10m"
+
+  # Step 5: ATO check
+  - id: ato_check
+    name: "Account Takeover Check"
+    type: ato_check
+    config:
+      target: "{{target}}"
+    depends_on:
+      - crawl
+
+  # Step 6: Generate report
+  - id: report
+    name: "Generate Report"
+    type: report
+    config:
+      format: "json"
+      output_to: "{{output_dir}}/scan-report.json"
+    depends_on:
+      - xss_basic
+      - xss_bypass
+      - ato_check
+
+on_success:
+  - type: log
+    config:
+      message: "Scan completed successfully"
+
+on_failure:
+  - type: log
+    config:
+      message: "Scan failed - check logs for details"
+
+output:
+  directory: "./scan-results"
+  formats:
+    - json
+    - html
+    - md

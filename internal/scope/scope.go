@@ -200,6 +200,9 @@ func normalizeDomain(value string) string {
 		}
 	}
 	value = strings.TrimSpace(value)
+	if _, _, err := net.ParseCIDR(value); err == nil {
+		return value
+	}
 	if idx := strings.Index(value, "/"); idx >= 0 {
 		value = value[:idx]
 	}

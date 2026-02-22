@@ -1,0 +1,198 @@
+# Browser Automation Script - XSS Injection Testing
+# Usage: aegis-scan --script configs/scripts/xss-injection-test.yaml --var "target=https://example.com"
+
+name: "XSS Injection Test"
+description: "Tests for XSS vulnerabilities by injecting payloads and checking for execution"
+version: "1.0.0"
+
+variables:
+  target: "https://example.com"
+  search_path: "/search"
+  payload_basic: "<script>alert('XSS')</script>"
+  payload_img: "<img src=x onerror=alert('XSS')>"
+  payload_svg: "<svg onload=alert('XSS')>"
+
+settings:
+  headless: true
+  timeout: "30s"
+  viewport:
+    width: 1920
+    height: 1080
+  screenshots_dir: "./xss-screenshots"
+
+actions:
+  # Navigate to target
+  - id: nav_home
+    name: "Navigate to home page"
+    type: navigate
+    url: "{{target}}"
+
+  - type: wait_for_load
+
+  # Take baseline screenshot
+  - id: baseline
+    name: "Baseline screenshot"
+    type: screenshot
+    path: "./xss-screenshots/00_baseline.png"
+
+  # Test 1: Search parameter injection
+  - id: nav_search_basic
+    name: "Navigate with basic XSS payload"
+    type: navigate
+    url: "{{target}}{{search_path}}?q={{payload_basic}}"
+
+  - type: wait_for_load
+
+  - id: screenshot_basic
+    name: "Screenshot: Basic payload test"
+    type: screenshot
+    path: "./xss-screenshots/01_basic_payload.png"
+
+  # Check if payload is reflected
+  - id: check_reflection_basic
+    name: "Check basic payload reflection"
+    type: evaluate
+    script: |
+      (function() {
+        const html = document.body.innerHTML;
+        return html.includes('<script>') || html.includes('onerror=');
+      })()
+    variable: "basic_reflected"
+
+  # Test 2: Image onerror injection
+  - id: nav_search_img
+    name: "Navigate with img onerror payload"
+    type: navigate
+    url: "{{target}}{{search_path}}?q={{payload_img}}"
+
+  - type: wait_for_load
+
+  - id: screenshot_img
+    name: "Screenshot: Img payload test"
+    type: screenshot
+    path: "./xss-screenshots/02_img_payload.png"
+
+  # Check if img tag is rendered
+  - id: check_img_reflection
+    name: "Check img payload reflection"
+    type: evaluate
+    script: |
+      (function() {
+        const imgs = document.querySelectorAll('img[src="x"]');
+        return imgs.length > 0;
+      })()
+    variable: "img_reflected"
+
+  # Test 3: SVG onload injection
+  - id: nav_search_svg
+    name: "Navigate with SVG payload"
+    type: navigate
+    url: "{{target}}{{search_path}}?q={{payload_svg}}"
+
+  - type: wait_for_load
+
+  - id: screenshot_svg
+    name: "Screenshot: SVG payload test"
+    type: screenshot
+    path: "./xss-screenshots/03_svg_payload.png"
+
+  # Test 4: Form input injection
+  - id: nav_home_form
+    name: "Navigate to home for form test"
+    type: navigate
+    url: "{{target}}"
+
+  - type: wait_for_load
+
+  # Find and fill search input
+  - id: find_search
+    name: "Find search input"
+    type: fill
+    selector: "input[type='search'], input[name='q'], input[name='search'], input.search-input"
+    value: "{{payload_basic}}"
+    optional: true
+
+  # Submit search
+  - id: submit_search
+    name: "Submit search form"
+    type: press
+    keys: "Enter"
+    optional: true
+
+  - type: wait
+    duration: "2s"
+
+  - id: screenshot_form
+    name: "Screenshot: Form submission test"
+    type: screenshot
+    path: "./xss-screenshots/04_form_injection.png"
+
+  # Test 5: DOM XSS via hash
+  - id: nav_hash
+    name: "Navigate with hash-based payload"
+    type: navigate
+    url: "{{target}}#{{payload_basic}}"
+
+  - type: wait
+    duration: "1s"
+
+  - id: screenshot_hash
+    name: "Screenshot: Hash injection test"
+    type: screenshot
+    path: "./xss-screenshots/05_hash_injection.png"
+
+  # Check for DOM sinks
+  - id: check_dom_sinks
+    name: "Check for dangerous DOM sinks"
+    type: evaluate
+    script: |
+      (function() {
+        const html = document.documentElement.outerHTML;
+        const sinks = [
+          'innerHTML',
+          'outerHTML',
+          'document.write',
+          'eval(',
+          'setTimeout(',
+          'setInterval(',
+          'location.hash',
+          'location.search'
+        ];
+        const found = sinks.filter(s => html.includes(s));
+        return JSON.stringify(found);
+      })()
+    variable: "dom_sinks"
+
+  # Extract page content for analysis
+  - id: extract_content
+    name: "Extract page HTML for analysis"
+    type: evaluate
+    script: "document.body.innerHTML.substring(0, 5000)"
+    variable: "page_content"
+
+  # Get all input fields
+  - id: find_inputs
+    name: "Find all input fields"
+    type: evaluate
+    script: |
+      (function() {
+        const inputs = document.querySelectorAll('input, textarea');
+        return Array.from(inputs).map(i => ({
+          name: i.name || i.id,
+          type: i.type,
+          value: i.value
+        }));
+      })()
+    variable: "input_fields"
+
+  # Log results
+  - id: log_results
+    name: "Log XSS test results"
+    type: log
+    value: "XSS Testing Complete. DOM Sinks found: {{dom_sinks}}"
+
+on_error:
+  - type: screenshot
+    path: "./xss-screenshots/error.png"
+  - type: log
+    value: "XSS test encountered an error"

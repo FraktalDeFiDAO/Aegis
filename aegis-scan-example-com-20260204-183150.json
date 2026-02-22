@@ -1,0 +1,83 @@
+{
+  "scan_info": {
+    "started_at": "2026-02-04T18:31:32.461045514Z",
+    "duration": 17619723236,
+    "scanner_version": "1.0.0"
+  },
+  "target": {
+    "url": "https://example.com",
+    "host": "example.com",
+    "ports": [
+      80,
+      443,
+      6379,
+      27017,
+      9200,
+      9300,
+      8080,
+      8443
+    ]
+  },
+  "dom_xss_findings": {
+    "scan_dir": "https://example.com",
+    "files_scanned": 0,
+    "total_sources": 0,
+    "total_sinks": 0,
+    "total_flows": 0,
+    "critical_findings": 0,
+    "high_findings": 0,
+    "medium_findings": 0,
+    "frameworks_detected": null,
+    "findings": null,
+    "high_confidence_flows": null,
+    "test_payloads": null
+  },
+  "asset_discovery": {
+    "base_url": "https://example.com",
+    "assets": [],
+    "total_count": 0,
+    "by_type": {},
+    "total_size": 0
+  },
+  "api_endpoints": {
+    "base_url": "https://example.com",
+    "endpoints": [],
+    "total_count": 0
+  },
+  "discovered_pages": [
+    {
+      "url": "https://example.com",
+      "title": "Example Domain",
+      "status_code": 200,
+      "content_type": "text/html",
+      "depth": 0
+    }
+  ],
+  "platform_detection": {
+    "frameworks": [],
+    "platform_type": 3,
+    "server_technologies": [
+      "cloudflare"
+    ],
+    "is_dev_mode": true,
+    "has_source_map": false
+  },
+  "summary": {
+    "total_xss": 0,
+    "total_dom_xss": 0,
+    "total_assets": 0,
+    "total_apis": 0,
+    "total_pages": 1,
+    "total_exploitable": 0,
+    "total_owasp": 0,
+    "total_eol": 0,
+    "severity_counts": {
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0,
+      "info": 0
+    }
+  },
+  "generated_at": "2026-02-04T18:31:50.08076895Z"
+}

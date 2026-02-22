@@ -9,8 +9,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/proto"
@@ -85,6 +88,59 @@ func (m *SessionManager) Load(page *rod.Page) error {
 
 	if err := m.hydrateStorage(page, "sessionStorage", data.SessionStorage); err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// ApplyCookiesToJar loads cookies from the session file into the provided cookie jar.
+// defaultURL is used when a cookie lacks a domain attribute.
+func (m *SessionManager) ApplyCookiesToJar(jar http.CookieJar, defaultURL string) error {
+	if jar == nil {
+		return nil
+	}
+	data, err := m.read()
+	if err != nil {
+		return err
+	}
+	if len(data.Cookies) == 0 {
+		return nil
+	}
+
+	var fallback *url.URL
+	if defaultURL != "" {
+		fallback, _ = url.Parse(defaultURL)
+	}
+
+	for _, cookie := range data.Cookies {
+		host := strings.TrimPrefix(cookie.Domain, ".")
+		if host == "" && fallback != nil {
+			host = fallback.Hostname()
+		}
+		if host == "" {
+			continue
+		}
+
+		scheme := "http"
+		if cookie.Secure {
+			scheme = "https"
+		} else if fallback != nil && fallback.Scheme != "" {
+			scheme = fallback.Scheme
+		}
+
+		jar.SetCookies(&url.URL{
+			Scheme: scheme,
+			Host:   host,
+		}, []*http.Cookie{
+			{
+				Name:     cookie.Name,
+				Value:    cookie.Value,
+				Domain:   cookie.Domain,
+				Path:     cookie.Path,
+				Secure:   cookie.Secure,
+				HttpOnly: cookie.HTTPOnly,
+			},
+		})
 	}
 
 	return nil

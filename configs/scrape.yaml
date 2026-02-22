@@ -1,0 +1,17 @@
+maxDepth: 2
+workerCount: 2
+headless: true
+scroll: false
+includeExternal: false
+allowPrivateHosts: true
+userAgent: "AegisScrape/1.0"
+headers: {}
+maxPages: 0
+maxLinksPerPage: 0
+requestDelayMillis: 0
+outputDir: ""
+sessionPath: ""
+manifestFormat: "json"
+pageTimeoutSeconds: 30
+downloadTimeoutSeconds: 30
+maxDownloadBytes: 20971520
