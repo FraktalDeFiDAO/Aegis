@@ -1,6 +1,12 @@
 # Build artifacts
 /aegis
+/aegis-scan
 *.exe
+
+# Per-run scan artifacts emitted at repo root by aegis-scan
+/aegis-scan-*.html
+/aegis-scan-*.json
+/aegis-scan-*.md
 
 # Browser cache
 .cache/
