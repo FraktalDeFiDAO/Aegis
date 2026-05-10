@@ -3,8 +3,8 @@
 package recon
 
 import (
-	"fmt"
 	"net"
+	"strconv"
 	"time"
 
 	"github.com/coppertone/bug-hunter/app/aegis/internal/logger"
@@ -38,7 +38,7 @@ func (m *Web2Manager) PortScan(host string, ports ...int) []int {
 	openPorts := []int{}
 
 	for _, port := range commonPorts {
-		address := fmt.Sprintf("%s:%d", host, port)
+		address := net.JoinHostPort(host, strconv.Itoa(port))
 		conn, err := net.DialTimeout("tcp", address, 1*time.Second)
 		if err == nil {
 			openPorts = append(openPorts, port)

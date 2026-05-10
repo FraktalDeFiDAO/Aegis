@@ -3,7 +3,7 @@ name: aegis-pipeline
 
 steps:
   prepare:
-    image: golang:latest
+    image: golang:1.25
     commands:
       - go install golang.org/x/tools/cmd/goimports@latest
       - go mod tidy
@@ -27,7 +27,7 @@ steps:
       event: [push, pull_request]
 
   test:
-    image: golang:latest
+    image: golang:1.25
     commands:
       - go test -v -race -coverprofile=coverage.out ./...
       - go tool cover -func=coverage.out
