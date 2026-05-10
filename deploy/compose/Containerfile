@@ -1,5 +1,22 @@
 # Multi-stage build so the runtime image stays minimal.
-FROM docker.io/library/golang:1.25 AS builder
+#
+# Rotate base-image digests when bumping versions. This dev environment
+# has curl + jq (no podman/skopeo); resolve via the registry API:
+#
+#   TOKEN=$(curl -s 'https://auth.docker.io/token?service=registry.docker.io&scope=repository:library/golang:pull' | jq -r .token)
+#   curl -sI -H "Authorization: Bearer $TOKEN" \
+#     -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
+#     https://registry-1.docker.io/v2/library/golang/manifests/1.25 \
+#     | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}'
+#
+#   curl -sI \
+#     -H 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' \
+#     https://registry.fedoraproject.org/v2/fedora/manifests/41 \
+#     | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}'
+#
+# Hosts with podman:  podman pull <ref> && podman inspect --format '{{.Digest}}' <ref>
+# Hosts with skopeo:  skopeo inspect docker://<registry>/<repo>:<tag> | jq -r .Digest
+FROM docker.io/library/golang:1.25@sha256:c0a2bd0756d92462a0d449124b039100ce447ebf69dc6c80a6d877503b36935e AS builder
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -13,7 +30,7 @@ RUN goimports -w .
 
 RUN CGO_ENABLED=0 go build -mod=vendor -o .agents/bin/aegis ./cmd/aegis/
 
-FROM registry.fedoraproject.org/fedora:41
+FROM registry.fedoraproject.org/fedora:41@sha256:893f7eeffce8e3e2bb2bc62786ba5603fb1e0bd6ba07091acb892266b95bafdf
 RUN dnf -y install \
     alsa-lib \
     at-spi2-atk \
