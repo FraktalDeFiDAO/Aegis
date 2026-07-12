@@ -1,65 +1,54 @@
-# Aegis Audit Findings
+# Audit Findings — v4 Comprehensive (2026-07-12)
 
-## Overview
-This document outlines the findings from auditing the Aegis codebase, comparing specifications, tests, and implementation.
+## Status
 
-## Issues Identified
+| Severity   | Count |
+|------------|-------|
+| CRITICAL   | 31    |
+| HIGH       | 35    |
+| MEDIUM     | 17    |
+| LOW        | 11    |
+| INFO       | 15    |
+| **TOTAL**  | **109** |
 
-### 1. Scanner Test Issue
-**Location**: `/internal/scanner/scanner_test.go`
-**Problem**: Missing import for `strings` package in `TestIsValidTextFile` function
-**Impact**: Compilation failure
-**Fix Required**: Add `import "strings"`
+## Key Patterns
 
-### 2. Crawler Screenshot Bug
-**Location**: `/internal/crawler/crawler.go`
-**Problem**: Double call to `page.Screenshot()` instead of capturing and saving the returned image
-**Impact**: Screenshots not saved properly
-**Fix Required**: Correct the screenshot capture logic
+### Pattern A: Response Body Leaks in exploitable/
+Every scanner (elasticsearch, jenkins, mongodb, redis) tries HTTP then HTTPS
+sequentially without closing the intermediate response body. `defer resp.Body.Close()`
+inside conditional branches only closes the last successful response.
 
-### 3. Missing Tests
-**Packages without adequate test coverage**:
-- `internal/intel` - No tests
-- `internal/response` - No tests  
-- `internal/logger` - No tests
-- `internal/api` - Limited endpoint tests
+### Pattern B: Race Conditions in browser/injector.go
+`consoleErrors` slice and dialog result fields are written from event handler
+goroutines without synchronization (no mutex, no channel).
 
-### 4. Security Concerns
-**Hardcoded Development Key**:
-- Location: `/internal/session/manager.go`
-- Issue: Uses fallback key when no key provided
-- Risk: Insecure for production use
+### Pattern C: Stub Functions in workflow.go
+`executeCrawl`, `executeInject`, `executeExtract` are placeholders that return
+empty/hardcoded results. The notify action has no implementation.
 
-**Path Traversal Vulnerability**:
-- Location: `generateFilename` function in `/internal/crawler/crawler.go`
-- Issue: Insufficient sanitization of URLs for file paths
-- Risk: Potential directory traversal attacks
+### Pattern D: Missing Explicit TLS Config
+9 HTTP clients have `Timeout` but no explicit `Transport` with `tls.Config`.
+SPEC §1 says: "Every TLS config defaults to verified; unverified mode is opt-in."
 
-### 5. Code Quality Issues
-- Inconsistent error handling patterns
-- Magic numbers and strings scattered throughout
-- Missing documentation for exported functions
-- Potential resource leaks in some functions
+### Pattern E: Missing HTTP Client Timeouts
+`intel/intel.go` and `response/handler.go` use `http.DefaultClient` with no timeout.
 
-## Recommendations
+### Pattern F: Code Duplication
+- `compareVersions`/`versionInRange` duplicated across 4 exploitable scanners
+- `resolveURL` duplicated across 4 packages
+- `contains` helper duplicated across 2 packages
 
-### Immediate Actions
-1. Fix the scanner test compilation issue
-2. Correct the screenshot capture bug
-3. Add basic tests for all packages
-4. Address security concerns with hardcoded keys
-5. Improve input validation
+## Authoritative Sources
 
-### Medium-term Improvements
-1. Implement comprehensive test suite
-2. Add proper error handling patterns
-3. Improve documentation coverage
-4. Add security-focused tests
-5. Implement proper configuration management
+- `AUDIT_REPORT.md` — v4 comprehensive report with full finding details
+- `docs/plans/2026-07-12-v4-comprehensive-remediation.md` — active remediation plan
+- `.hermes/cache/delegation/subagent-summary-0-20260712_074203_196428.txt` — raw subagent output (115 findings)
 
-### Long-term Enhancements
-1. Add integration tests for full workflow
-2. Implement proper CI/CD pipeline
-3. Add security scanning to build process
-4. Add performance benchmarks
-5. Improve logging and monitoring capabilities
+## Previous Audit Versions
+
+| Version | Date       | Findings | Status      |
+|---------|------------|----------|-------------|
+| v1      | 2026-05-02 | 87       | 12/38 closed (31.6%) |
+| v2      | 2026-06-02 | 38       | 16/38 target, 9 fixes in PR #1 |
+| v3      | 2026-06-02 | 0 open   | Claimed resolved (now known stale) |
+| v4      | 2026-07-12 | 115      | In remediation |
