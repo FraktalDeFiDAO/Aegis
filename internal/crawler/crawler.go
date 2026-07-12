@@ -264,8 +264,9 @@ func (c *Crawler) Run(dumpPath string) error {
 
 	jar, _ := cookiejar.New(nil)
 	c.client = &http.Client{
-		Timeout: time.Duration(c.config.PageTimeoutSeconds) * time.Second,
-		Jar:     jar,
+		Timeout:       time.Duration(c.config.PageTimeoutSeconds) * time.Second,
+		Jar:           jar,
+		CheckRedirect: validator.RedirectPolicy(c.config.AllowPrivateHosts),
 	}
 	c.applySessionCookies()
 

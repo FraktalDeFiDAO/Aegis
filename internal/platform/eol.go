@@ -10,15 +10,15 @@ import (
 
 // EOLInfo contains end-of-life information for a framework version
 type EOLInfo struct {
-	Framework   string    `json:"framework"`
-	Version     string    `json:"version"`
-	EOLDate     time.Time `json:"eol_date"`
-	IsEOL       bool      `json:"is_eol"`
-	DaysUntilEOL int      `json:"days_until_eol,omitempty"`
-	LatestVersion string `json:"latest_version,omitempty"`
-	UpgradePath   string `json:"upgrade_path,omitempty"`
-	Severity      string  `json:"severity"`
-	CVSS          float64 `json:"cvss"`
+	Framework     string    `json:"framework"`
+	Version       string    `json:"version"`
+	EOLDate       time.Time `json:"eol_date"`
+	IsEOL         bool      `json:"is_eol"`
+	DaysUntilEOL  int       `json:"days_until_eol,omitempty"`
+	LatestVersion string    `json:"latest_version,omitempty"`
+	UpgradePath   string    `json:"upgrade_path,omitempty"`
+	Severity      string    `json:"severity"`
+	CVSS          float64   `json:"cvss"`
 }
 
 // EOLChecker checks framework versions against EOL databases

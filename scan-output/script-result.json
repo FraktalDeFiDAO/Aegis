@@ -1,0 +1,312 @@
+{
+  "script_name": "IDTech Account Creation",
+  "status": "success",
+  "start_time": "2026-02-06T09:14:26.345802932-06:00",
+  "end_time": "2026-02-06T09:15:40.713164576-06:00",
+  "duration": 74367361684,
+  "actions": [
+    {
+      "action_id": "nav_main",
+      "action_name": "Navigate to IDTech homepage",
+      "action_type": "navigate",
+      "status": "success",
+      "duration": 787373430
+    },
+    {
+      "action_type": "wait",
+      "status": "success",
+      "duration": 5000093938
+    },
+    {
+      "action_id": "screenshot_home",
+      "action_name": "Screenshot: Homepage",
+      "action_type": "screenshot",
+      "status": "success",
+      "duration": 1072556979,
+      "output": "./workspace/unico_idtech/findings/screenshots/acct1_01_homepage.png"
+    },
+    {
+      "action_id": "click_my_account",
+      "action_name": "Click My Account",
+      "action_type": "click",
+      "status": "success",
+      "duration": 54012692
+    },
+    {
+      "action_type": "wait",
+      "status": "success",
+      "duration": 5000641556
+    },
+    {
+      "action_id": "screenshot_account_page",
+      "action_name": "Screenshot: Account page",
+      "action_type": "screenshot",
+      "status": "success",
+      "duration": 297705089,
+      "output": "./workspace/unico_idtech/findings/screenshots/acct1_02_account_page.png"
+    },
+    {
+      "action_id": "click_new_account",
+      "action_name": "Click Create Account",
+      "action_type": "click",
+      "status": "success",
+      "duration": 6717018254
+    },
+    {
+      "action_type": "wait",
+      "status": "success",
+      "duration": 4000987407
+    },
+    {
+      "action_id": "screenshot_registration",
+      "action_name": "Screenshot: Registration form",
+      "action_type": "screenshot",
+      "status": "success",
+      "duration": 249847821,
+      "output": "./workspace/unico_idtech/findings/screenshots/acct1_03_registration.png"
+    },
+    {
+      "action_id": "fill_first_name_1",
+      "action_name": "Fill First Name",
+      "action_type": "fill",
+      "status": "success",
+      "duration": 263774509
+    },
+    {
+      "action_id": "fill_last_name_1",
+      "action_name": "Fill Last Name",
+      "action_type": "fill",
+      "status": "success",
+      "duration": 194390309
+    },
+    {
+      "action_id": "fill_email_1",
+      "action_name": "Fill Email",
+      "action_type": "fill",
+      "status": "success",
+      "duration": 189569984
+    },
+    {
+      "action_id": "fill_phone_1",
+      "action_name": "Fill Phone",
+      "action_type": "fill",
+      "status": "success",
+      "duration": 195179802
+    },
+    {
+      "action_type": "wait",
+      "status": "success",
+      "duration": 1001136877
+    },
+    {
+      "action_id": "screenshot_filled_1",
+      "action_name": "Screenshot: Form filled (Account 1)",
+      "action_type": "screenshot",
+      "status": "success",
+      "duration": 320900372,
+      "output": "./workspace/unico_idtech/findings/screenshots/acct1_04_filled.png"
+    },
+    {
+      "action_type": "log",
+      "status": "success",
+      "duration": 50444
+    },
+    {
+      "action_id": "open_tab2",
+      "action_name": "Open new tab for second account",
+      "action_type": "new_tab",
+      "status": "success",
+      "duration": 12271924921,
+      "output": {
+        "tab_name": "account2_tab",
+        "url": "https://www.idtech.com/"
+      }
+    },
+    {
+      "action_type": "wait",
+      "status": "success",
+      "duration": 5002913283
+    },
+    {
+      "action_id": "screenshot_home_2",
+      "action_name": "Screenshot: Homepage (Tab 2)",
+      "action_type": "screenshot",
+      "status": "success",
+      "duration": 492541712,
+      "output": "./workspace/unico_idtech/findings/screenshots/acct2_01_homepage.png"
+    },
+    {
+      "action_id": "click_my_account_2",
+      "action_name": "Click My Account (Tab 2)",
+      "action_type": "click",
+      "status": "success",
+      "duration": 241074596
+    },
+    {
+      "action_type": "wait",
+      "status": "success",
+      "duration": 5001329745
+    },
+    {
+      "action_id": "screenshot_account_page_2",
+      "action_name": "Screenshot: Account page (Tab 2)",
+      "action_type": "screenshot",
+      "status": "success",
+      "duration": 174370491,
+      "output": "./workspace/unico_idtech/findings/screenshots/acct2_02_account_page.png"
+    },
+    {
+      "action_id": "click_new_account_2",
+      "action_name": "Click Create Account (Tab 2)",
+      "action_type": "click",
+      "status": "success",
+      "duration": 301023276
+    },
+    {
+      "action_type": "wait",
+      "status": "success",
+      "duration": 4002753746
+    },
+    {
+      "action_id": "screenshot_registration_2",
+      "action_name": "Screenshot: Registration form (Tab 2)",
+      "action_type": "screenshot",
+      "status": "success",
+      "duration": 372825127,
+      "output": "./workspace/unico_idtech/findings/screenshots/acct2_03_registration.png"
+    },
+    {
+      "action_id": "fill_first_name_2",
+      "action_name": "Fill First Name (Tab 2)",
+      "action_type": "fill",
+      "status": "success",
+      "duration": 267029534
+    },
+    {
+      "action_id": "fill_last_name_2",
+      "action_name": "Fill Last Name (Tab 2)",
+      "action_type": "fill",
+      "status": "success",
+      "duration": 285928242
+    },
+    {
+      "action_id": "fill_email_2",
+      "action_name": "Fill Email (Tab 2)",
+      "action_type": "fill",
+      "status": "success",
+      "duration": 176435980
+    },
+    {
+      "action_id": "fill_phone_2",
+      "action_name": "Fill Phone (Tab 2)",
+      "action_type": "fill",
+      "status": "success",
+      "duration": 191485390
+    },
+    {
+      "action_type": "wait",
+      "status": "success",
+      "duration": 1001010087
+    },
+    {
+      "action_id": "screenshot_filled_2",
+      "action_name": "Screenshot: Form filled (Account 2)",
+      "action_type": "screenshot",
+      "status": "success",
+      "duration": 187540048,
+      "output": "./workspace/unico_idtech/findings/screenshots/acct2_04_filled.png"
+    },
+    {
+      "action_type": "log",
+      "status": "success",
+      "duration": 59922
+    },
+    {
+      "action_id": "switch_to_tab1",
+      "action_name": "Switch back to Tab 1",
+      "action_type": "switch_tab",
+      "status": "success",
+      "duration": 13188381
+    },
+    {
+      "action_type": "wait",
+      "status": "success",
+      "duration": 1000819768
+    },
+    {
+      "action_id": "final_screenshot_tab1",
+      "action_name": "Final screenshot Tab 1",
+      "action_type": "screenshot",
+      "status": "success",
+      "duration": 258340316,
+      "output": "./workspace/unico_idtech/findings/screenshots/acct1_05_final.png"
+    },
+    {
+      "action_id": "switch_to_tab2",
+      "action_name": "Switch to Tab 2",
+      "action_type": "switch_tab",
+      "status": "success",
+      "duration": 6486896
+    },
+    {
+      "action_type": "wait",
+      "status": "success",
+      "duration": 1001020324
+    },
+    {
+      "action_id": "final_screenshot_tab2",
+      "action_name": "Final screenshot Tab 2",
+      "action_type": "screenshot",
+      "status": "success",
+      "duration": 189757465,
+      "output": "./workspace/unico_idtech/findings/screenshots/acct2_05_final.png"
+    },
+    {
+      "action_id": "get_all_tabs",
+      "action_name": "Get all tabs info",
+      "action_type": "get_tabs",
+      "status": "success",
+      "duration": 1217638,
+      "output": [
+        {
+          "active": false,
+          "name": "main",
+          "title": "Create Account",
+          "url": "https://www.idtech.com/account#/createAccount"
+        },
+        {
+          "active": true,
+          "name": "account2_tab",
+          "title": "Create Account",
+          "url": "https://www.idtech.com/account#/createAccount"
+        }
+      ]
+    },
+    {
+      "action_type": "log",
+      "status": "success",
+      "duration": 81512
+    }
+  ],
+  "variables": {
+    "email1": "betteryourwebbetteryourweb+acct1@wearehackerone.com",
+    "email2": "betteryourwebbetteryourweb+acct2@wearehackerone.com",
+    "first_name": "Derek",
+    "last_name": "Williams",
+    "phone1": "+13184051287",
+    "phone2": "+12257559366",
+    "target": "https://www.idtech.com"
+  },
+  "screenshots": [
+    "./workspace/unico_idtech/findings/screenshots/acct1_01_homepage.png",
+    "./workspace/unico_idtech/findings/screenshots/acct1_02_account_page.png",
+    "./workspace/unico_idtech/findings/screenshots/acct1_03_registration.png",
+    "./workspace/unico_idtech/findings/screenshots/acct1_04_filled.png",
+    "./workspace/unico_idtech/findings/screenshots/acct2_01_homepage.png",
+    "./workspace/unico_idtech/findings/screenshots/acct2_02_account_page.png",
+    "./workspace/unico_idtech/findings/screenshots/acct2_03_registration.png",
+    "./workspace/unico_idtech/findings/screenshots/acct2_04_filled.png",
+    "./workspace/unico_idtech/findings/screenshots/acct1_05_final.png",
+    "./workspace/unico_idtech/findings/screenshots/acct2_05_final.png"
+  ]
+}

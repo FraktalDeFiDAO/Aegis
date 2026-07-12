@@ -4,16 +4,19 @@
 package platform
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/coppertone/bug-hunter/app/aegis/internal/validator"
 )
 
 // Framework represents a detected web framework
- type Framework int
+type Framework int
 
 const (
 	Unknown Framework = iota
@@ -96,14 +99,14 @@ func (f Framework) String() string {
 }
 
 // PlatformType categorizes the platform type
- type PlatformType int
+type PlatformType int
 
 const (
 	UnknownPlatform PlatformType = iota
-	StaticSite     // Static HTML/CSS
-	SPA            // Single Page Application
-	SSR            // Server-Side Rendered
-	Hybrid         // Mix of technologies
+	StaticSite                   // Static HTML/CSS
+	SPA                          // Single Page Application
+	SSR                          // Server-Side Rendered
+	Hybrid                       // Mix of technologies
 )
 
 func (p PlatformType) String() string {
@@ -122,22 +125,22 @@ func (p PlatformType) String() string {
 }
 
 // Detection holds the results of platform detection
- type Detection struct {
-	Frameworks      []FrameworkInfo    `json:"frameworks"`
-	PlatformType    PlatformType       `json:"platform_type"`
-	ServerTech      []string           `json:"server_technologies,omitempty"`
-	JavaScriptLibs  []LibraryInfo      `json:"javascript_libraries,omitempty"`
-	CMS             *CMSInfo           `json:"cms,omitempty"`
-	APIEndpoints    []string           `json:"api_endpoints,omitempty"`
-	IsDevMode       bool               `json:"is_dev_mode"`
-	HasSourceMap    bool               `json:"has_source_map"`
-	SourceMapURL    string             `json:"source_map_url,omitempty"`
-	CDNAssets       []string           `json:"cdn_assets,omitempty"`
-	EOLInfo         []EOLInfo          `json:"eol_info,omitempty"`
+type Detection struct {
+	Frameworks     []FrameworkInfo `json:"frameworks"`
+	PlatformType   PlatformType    `json:"platform_type"`
+	ServerTech     []string        `json:"server_technologies,omitempty"`
+	JavaScriptLibs []LibraryInfo   `json:"javascript_libraries,omitempty"`
+	CMS            *CMSInfo        `json:"cms,omitempty"`
+	APIEndpoints   []string        `json:"api_endpoints,omitempty"`
+	IsDevMode      bool            `json:"is_dev_mode"`
+	HasSourceMap   bool            `json:"has_source_map"`
+	SourceMapURL   string          `json:"source_map_url,omitempty"`
+	CDNAssets      []string        `json:"cdn_assets,omitempty"`
+	EOLInfo        []EOLInfo       `json:"eol_info,omitempty"`
 }
 
 // FrameworkInfo holds detailed framework information
- type FrameworkInfo struct {
+type FrameworkInfo struct {
 	Name       string `json:"name"`
 	Version    string `json:"version,omitempty"`
 	Confidence int    `json:"confidence"` // 0-100
@@ -146,39 +149,66 @@ func (p PlatformType) String() string {
 }
 
 // LibraryInfo holds JavaScript library information
- type LibraryInfo struct {
+type LibraryInfo struct {
 	Name    string `json:"name"`
 	Version string `json:"version,omitempty"`
 }
 
 // CMSInfo holds CMS-specific information
- type CMSInfo struct {
-	Name      string            `json:"name"`
-	Version   string            `json:"version,omitempty"`
-	Theme     string            `json:"theme,omitempty"`
-	Plugins   []string          `json:"plugins,omitempty"`
-	Vulnerabilities []string    `json:"known_vulnerabilities,omitempty"`
+type CMSInfo struct {
+	Name            string   `json:"name"`
+	Version         string   `json:"version,omitempty"`
+	Theme           string   `json:"theme,omitempty"`
+	Plugins         []string `json:"plugins,omitempty"`
+	Vulnerabilities []string `json:"known_vulnerabilities,omitempty"`
 }
 
 // Detector performs platform detection
- type Detector struct {
-	httpClient *http.Client
+type Detector struct {
+	httpClient        *http.Client
+	allowPrivateHosts bool
 }
 
-// NewDetector creates a new platform detector
- func NewDetector(timeout time.Duration) *Detector {
-	return &Detector{
-		httpClient: &http.Client{
-			Timeout: timeout,
-			CheckRedirect: func(req *http.Request, via []*http.Request) error {
-				return nil // Follow redirects
-			},
-		},
+// DetectorOption configures the detector.
+type DetectorOption func(*Detector)
+
+// WithAllowPrivateHosts permits localhost and RFC1918 targets.
+func WithAllowPrivateHosts(allow bool) DetectorOption {
+	return func(d *Detector) {
+		d.allowPrivateHosts = allow
 	}
 }
 
+// NewDetector creates a new platform detector.
+func NewDetector(timeout time.Duration, opts ...DetectorOption) *Detector {
+	d := &Detector{
+		allowPrivateHosts: true,
+		httpClient: &http.Client{
+			Timeout: timeout,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{},
+			},
+		},
+	}
+	for _, opt := range opts {
+		opt(d)
+	}
+	d.httpClient.CheckRedirect = validator.RedirectPolicy(d.allowPrivateHosts)
+	return d
+}
+
 // Detect performs full platform detection on a URL
- func (d *Detector) Detect(url string) (*Detection, error) {
+func (d *Detector) Detect(url string) (*Detection, error) {
+	if d.allowPrivateHosts {
+		if err := validator.ValidateURL(url); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := validator.ValidateTargetURL(url); err != nil {
+			return nil, err
+		}
+	}
+
 	detection := &Detection{
 		Frameworks:     []FrameworkInfo{},
 		ServerTech:     []string{},
@@ -237,7 +267,7 @@ func (p PlatformType) String() string {
 }
 
 // detectFromHeaders extracts information from HTTP headers
- func (d *Detector) detectFromHeaders(headers http.Header, detection *Detection) {
+func (d *Detector) detectFromHeaders(headers http.Header, detection *Detection) {
 	// Server header
 	if server := headers.Get("Server"); server != "" {
 		detection.ServerTech = append(detection.ServerTech, server)
@@ -264,10 +294,10 @@ func (p PlatformType) String() string {
 			detection.addFramework(ASP, "", 70)
 		}
 	}
- }
+}
 
 // detectFromHTML extracts information from HTML content
- func (d *Detector) detectFromHTML(content string, detection *Detection) {
+func (d *Detector) detectFromHTML(content string, detection *Detection) {
 	// Check for React markers
 	if matches := regexp.MustCompile(`data-reactid|data-reactroot|__REACT__|reactRoot`).FindString(content); matches != "" {
 		version := d.extractReactVersion(content)
@@ -303,18 +333,18 @@ func (p PlatformType) String() string {
 	if regexp.MustCompile(`(?i)react.*dev|vue.*dev|ng.*dev|__DEV__`).MatchString(content) {
 		detection.IsDevMode = true
 	}
- }
+}
 
 // detectJSFrameworks performs deeper JavaScript framework detection
- func (d *Detector) detectJSFrameworks(content string, detection *Detection) {
+func (d *Detector) detectJSFrameworks(content string, detection *Detection) {
 	// Extract all script sources
 	scriptRegex := regexp.MustCompile(`<script[^>]+src=["']([^"']+)["']`)
 	matches := scriptRegex.FindAllStringSubmatch(content, -1)
-	
+
 	for _, match := range matches {
 		if len(match) > 1 {
 			src := strings.ToLower(match[1])
-			
+
 			// Check for various frameworks
 			switch {
 			case strings.Contains(src, "react"):
@@ -340,26 +370,26 @@ func (p PlatformType) String() string {
 			case strings.Contains(src, "alpine"):
 				detection.addFramework(Alpine, "", 80)
 			}
-			
+
 			// Check for CDN
 			if strings.Contains(src, "cdn") || strings.Contains(src, "unpkg") || strings.Contains(src, "jsdelivr") {
 				detection.CDNAssets = append(detection.CDNAssets, match[1])
 			}
 		}
 	}
- }
+}
 
 // detectCMS detects Content Management Systems
- func (d *Detector) detectCMS(content string, headers http.Header, detection *Detection) {
+func (d *Detector) detectCMS(content string, headers http.Header, detection *Detection) {
 	// WordPress detection
 	if regexp.MustCompile(`wp-content|wp-includes|wordpress|wp-json`).MatchString(content) {
 		cms := &CMSInfo{Name: "WordPress"}
-		
+
 		// Try to extract version
 		if matches := regexp.MustCompile(`wp-includes/js/wp-emoji-release\.min\.js\?ver=([0-9.]+)`).FindStringSubmatch(content); len(matches) > 1 {
 			cms.Version = matches[1]
 		}
-		
+
 		// Check for plugins
 		pluginRegex := regexp.MustCompile(`wp-content/plugins/([^/]+)`)
 		pluginMatches := pluginRegex.FindAllStringSubmatch(content, -1)
@@ -368,10 +398,10 @@ func (p PlatformType) String() string {
 				cms.Plugins = append(cms.Plugins, pm[1])
 			}
 		}
-		
+
 		detection.CMS = cms
 		detection.addFramework(WordPress, cms.Version, 95)
-		
+
 		// Check for WooCommerce
 		if strings.Contains(content, "woocommerce") || strings.Contains(content, "wc-") {
 			detection.addFramework(WooCommerce, "", 85)
@@ -389,10 +419,10 @@ func (p PlatformType) String() string {
 	if strings.Contains(content, "myshopify.com") || strings.Contains(content, "shopify") {
 		detection.addFramework(Shopify, "", 90)
 	}
- }
+}
 
 // detectAPIEndpoints extracts potential API endpoints from content
- func (d *Detector) detectAPIEndpoints(content string, detection *Detection) {
+func (d *Detector) detectAPIEndpoints(content string, detection *Detection) {
 	// Common API patterns
 	apiPatterns := []*regexp.Regexp{
 		regexp.MustCompile(`["']/(?:api|graphql|rest|v\d+)/[^"']+["']`),
@@ -400,7 +430,7 @@ func (p PlatformType) String() string {
 		regexp.MustCompile(`axios\.(?:get|post|put|delete)\(["']/(?:[^"']+)["']`),
 		regexp.MustCompile(`url:\s*["']/(?:[^"']+)["']`),
 	}
-	
+
 	seen := make(map[string]bool)
 	for _, pattern := range apiPatterns {
 		matches := pattern.FindAllString(content, -1)
@@ -412,10 +442,10 @@ func (p PlatformType) String() string {
 			}
 		}
 	}
- }
+}
 
 // detectCDNs extracts CDN asset information
- func (d *Detector) detectCDNs(content string, detection *Detection) {
+func (d *Detector) detectCDNs(content string, detection *Detection) {
 	cdnPatterns := []string{
 		`cdnjs\.cloudflare\.com`,
 		`unpkg\.com`,
@@ -426,17 +456,17 @@ func (p PlatformType) String() string {
 		`code\.jquery\.com`,
 		`stackpath\.bootstrapcdn\.com`,
 	}
-	
+
 	for _, pattern := range cdnPatterns {
 		if regexp.MustCompile(pattern).MatchString(content) {
 			// Already added in detectJSFrameworks
 			break
 		}
 	}
- }
+}
 
 // determinePlatformType determines if site is SPA, SSR, or static
- func (d *Detector) determinePlatformType(detection *Detection) {
+func (d *Detector) determinePlatformType(detection *Detection) {
 	hasSPAFramework := false
 	for _, fw := range detection.Frameworks {
 		switch fw.Name {
@@ -444,7 +474,7 @@ func (p PlatformType) String() string {
 			hasSPAFramework = true
 		}
 	}
-	
+
 	if hasSPAFramework {
 		// Check for SSR indicators
 		if len(detection.ServerTech) > 0 {
@@ -457,10 +487,10 @@ func (p PlatformType) String() string {
 	} else {
 		detection.PlatformType = StaticSite
 	}
- }
+}
 
 // Helper methods
- func (d *Detection) addFramework(fw Framework, version string, confidence int) {
+func (d *Detection) addFramework(fw Framework, version string, confidence int) {
 	// Check if already exists
 	for i, existing := range d.Frameworks {
 		if existing.Name == fw.String() {
@@ -474,97 +504,97 @@ func (p PlatformType) String() string {
 			return
 		}
 	}
-	
+
 	d.Frameworks = append(d.Frameworks, FrameworkInfo{
 		Name:       fw.String(),
 		Version:    version,
 		Confidence: confidence,
 	})
- }
+}
 
- func (d *Detection) hasFramework(fw Framework) bool {
+func (d *Detection) hasFramework(fw Framework) bool {
 	for _, existing := range d.Frameworks {
 		if existing.Name == fw.String() {
 			return true
 		}
 	}
 	return false
- }
+}
 
- func contains(slice []string, item string) bool {
+func contains(slice []string, item string) bool {
 	for _, s := range slice {
 		if s == item {
 			return true
 		}
 	}
 	return false
- }
+}
 
 // Version extraction helpers
- func (d *Detector) extractReactVersion(content string) string {
+func (d *Detector) extractReactVersion(content string) string {
 	// Try various patterns
 	patterns := []string{
 		`react@([0-9.]+)`,
 		`react\.js@([0-9.]+)`,
 		`React version["']?\s*[:=]\s*["']?([0-9.]+)`,
 	}
-	
+
 	for _, pattern := range patterns {
 		if matches := regexp.MustCompile(pattern).FindStringSubmatch(content); len(matches) > 1 {
 			return matches[1]
 		}
 	}
 	return ""
- }
+}
 
- func (d *Detector) extractVueVersion(content string) string {
+func (d *Detector) extractVueVersion(content string) string {
 	patterns := []string{
 		`vue@([0-9.]+)`,
 		`Vue\.version\s*=\s*["']([0-9.]+)`,
 		`vue\.js@([0-9.]+)`,
 	}
-	
+
 	for _, pattern := range patterns {
 		if matches := regexp.MustCompile(pattern).FindStringSubmatch(content); len(matches) > 1 {
 			return matches[1]
 		}
 	}
 	return ""
- }
+}
 
- func (d *Detector) extractAngularVersion(content string) string {
+func (d *Detector) extractAngularVersion(content string) string {
 	patterns := []string{
 		`angular@([0-9.]+)`,
 		`angular\.js@([0-9.]+)`,
 		`ng-version=["']([0-9.]+)`,
 	}
-	
+
 	for _, pattern := range patterns {
 		if matches := regexp.MustCompile(pattern).FindStringSubmatch(content); len(matches) > 1 {
 			return matches[1]
 		}
 	}
 	return ""
- }
+}
 
- func (d *Detector) extractSvelteVersion(content string) string {
+func (d *Detector) extractSvelteVersion(content string) string {
 	if matches := regexp.MustCompile(`svelte@([0-9.]+)`).FindStringSubmatch(content); len(matches) > 1 {
 		return matches[1]
 	}
 	return ""
- }
+}
 
 // ToJSON returns detection as JSON
- func (d *Detection) ToJSON() ([]byte, error) {
+func (d *Detection) ToJSON() ([]byte, error) {
 	return json.MarshalIndent(d, "", "  ")
- }
+}
 
 // IsSPA returns true if the platform is a Single Page Application
- func (d *Detection) IsSPA() bool {
+func (d *Detection) IsSPA() bool {
 	return d.PlatformType == SPA || d.PlatformType == Hybrid
- }
+}
 
 // IsStatic returns true if the platform is a static site
- func (d *Detection) IsStatic() bool {
+func (d *Detection) IsStatic() bool {
 	return d.PlatformType == StaticSite
- }
+}

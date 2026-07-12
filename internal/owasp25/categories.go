@@ -7,7 +7,7 @@ import (
 )
 
 // Category represents an OWASP Top 10/25 category
- type Category int
+type Category int
 
 const (
 	// OWASP Top 10 2021 Categories
@@ -21,7 +21,7 @@ const (
 	IntegrityFailures
 	LoggingFailures
 	SSRF
-	
+
 	// Additional Top 25 Categories
 	BufferOverflow
 	XXE
@@ -115,21 +115,21 @@ func (c Category) ShortName() string {
 }
 
 // CategoryInfo provides detailed information about each category
- type CategoryInfo struct {
-	Category        Category
-	OWASPRank       int
-	CWEs            []string
-	CommonAttacks   []string
+type CategoryInfo struct {
+	Category          Category
+	OWASPRank         int
+	CWEs              []string
+	CommonAttacks     []string
 	DetectionPatterns []Pattern
-	Remediation     string
-	CVSSRange       struct {
+	Remediation       string
+	CVSSRange         struct {
 		Min float64
 		Max float64
 	}
 }
 
 // Pattern combines a regex with metadata
- type Pattern struct {
+type Pattern struct {
 	Name        string
 	Regex       *regexp.Regexp
 	Severity    string
@@ -141,7 +141,7 @@ func (c Category) ShortName() string {
 }
 
 // CategoryDatabase holds all OWASP category definitions
- var CategoryDatabase = map[Category]CategoryInfo{
+var CategoryDatabase = map[Category]CategoryInfo{
 	BrokenAccessControl: {
 		Category:  BrokenAccessControl,
 		OWASPRank: 1,
@@ -192,7 +192,7 @@ func (c Category) ShortName() string {
 			Max float64
 		}{5.0, 10.0},
 	},
-	
+
 	CryptographicFailures: {
 		Category:  CryptographicFailures,
 		OWASPRank: 2,
@@ -251,7 +251,7 @@ func (c Category) ShortName() string {
 			Max float64
 		}{5.0, 9.8},
 	},
-	
+
 	Injection: {
 		Category:  Injection,
 		OWASPRank: 3,
@@ -333,7 +333,7 @@ func (c Category) ShortName() string {
 			Max float64
 		}{5.4, 10.0},
 	},
-	
+
 	SecurityMisconfiguration: {
 		Category:  SecurityMisconfiguration,
 		OWASPRank: 5,
@@ -383,7 +383,7 @@ func (c Category) ShortName() string {
 			Max float64
 		}{4.0, 8.0},
 	},
-	
+
 	AuthFailures: {
 		Category:  AuthFailures,
 		OWASPRank: 7,
@@ -423,7 +423,7 @@ func (c Category) ShortName() string {
 			Max float64
 		}{5.0, 9.8},
 	},
-	
+
 	SSRF: {
 		Category:  SSRF,
 		OWASPRank: 10,
@@ -465,13 +465,13 @@ func (c Category) ShortName() string {
 }
 
 // GetCategoryInfo returns category information by category
- func GetCategoryInfo(cat Category) (CategoryInfo, bool) {
+func GetCategoryInfo(cat Category) (CategoryInfo, bool) {
 	info, ok := CategoryDatabase[cat]
 	return info, ok
 }
 
 // GetAllCategories returns all defined categories
- func GetAllCategories() []Category {
+func GetAllCategories() []Category {
 	return []Category{
 		BrokenAccessControl,
 		CryptographicFailures,
@@ -487,7 +487,7 @@ func (c Category) ShortName() string {
 }
 
 // CategoryFromCWE returns the OWASP category that contains a given CWE
- func CategoryFromCWE(cwe string) (Category, bool) {
+func CategoryFromCWE(cwe string) (Category, bool) {
 	for cat, info := range CategoryDatabase {
 		for _, c := range info.CWEs {
 			if c == cwe {

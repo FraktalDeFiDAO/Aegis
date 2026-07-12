@@ -293,7 +293,7 @@ func TestParseElementTypes(t *testing.T) {
 	}{
 		{[]string{"script", "img"}, 2},
 		{[]string{"svg", "div", "span"}, 3},
-		{[]string{}, 4}, // defaults
+		{[]string{}, 4},          // defaults
 		{[]string{"unknown"}, 4}, // falls back to defaults
 	}
 

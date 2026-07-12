@@ -2,12 +2,14 @@
 package content
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
 
 	"github.com/coppertone/bug-hunter/app/aegis/internal/platform"
+	"github.com/coppertone/bug-hunter/app/aegis/internal/validator"
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/launcher"
 )
@@ -45,13 +47,14 @@ const (
 
 // Acquirer handles content acquisition
 type Acquirer struct {
-	httpClient *http.Client
-	browser    *rod.Browser
-	launcher   *launcher.Launcher
-	strategy   AcquisitionStrategy
-	timeout    time.Duration
-	useBrowser bool
-	detector   *platform.Detector
+	httpClient        *http.Client
+	browser           *rod.Browser
+	launcher          *launcher.Launcher
+	strategy          AcquisitionStrategy
+	timeout           time.Duration
+	useBrowser        bool
+	detector          *platform.Detector
+	allowPrivateHosts bool
 }
 
 // AcquirerOption configures the acquirer
@@ -71,18 +74,34 @@ func WithTimeout(timeout time.Duration) AcquirerOption {
 	}
 }
 
+// WithAllowPrivateHosts permits localhost and RFC1918 targets.
+func WithAllowPrivateHosts(allow bool) AcquirerOption {
+	return func(a *Acquirer) {
+		a.allowPrivateHosts = allow
+	}
+}
+
 // NewAcquirer creates a new content acquirer
 func NewAcquirer(opts ...AcquirerOption) (*Acquirer, error) {
 	a := &Acquirer{
-		strategy:   AutoDetect,
-		timeout:    30 * time.Second,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
-		detector:   platform.NewDetector(30 * time.Second),
+		strategy:          AutoDetect,
+		timeout:           30 * time.Second,
+		allowPrivateHosts: true,
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{},
+			},
+		},
 	}
 
 	for _, opt := range opts {
 		opt(a)
 	}
+
+	a.httpClient.Timeout = a.timeout
+	a.httpClient.CheckRedirect = validator.RedirectPolicy(a.allowPrivateHosts)
+	a.detector = platform.NewDetector(a.timeout, platform.WithAllowPrivateHosts(a.allowPrivateHosts))
 
 	if a.strategy == RenderAlways || a.strategy == AutoDetect {
 		if err := a.initBrowser(); err != nil {
@@ -114,6 +133,16 @@ func (a *Acquirer) initBrowser() error {
 
 // Acquire fetches content from URL using appropriate method
 func (a *Acquirer) Acquire(url string) (*Content, error) {
+	if a.allowPrivateHosts {
+		if err := validator.ValidateURL(url); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := validator.ValidateTargetURL(url); err != nil {
+			return nil, err
+		}
+	}
+
 	switch a.strategy {
 	case StaticOnly:
 		return a.acquireStatic(url)

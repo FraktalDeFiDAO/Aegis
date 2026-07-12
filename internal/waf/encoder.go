@@ -94,22 +94,22 @@ func (e *Encoder) EncodeForContext(payload string, context string) string {
 // getRecommendedEncodings returns encoding strategies based on WAF type
 func (e *Encoder) getRecommendedEncodings(wafType WAFType) []EncodingType {
 	strategies := map[WAFType][]EncodingType{
-		WAFCloudflare: {EncodingUnicode, EncodingURL},
-		WAFAkamai:     {EncodingDoubleURL, EncodingCase},
-		WAFKona:       {EncodingDoubleURL, EncodingComment},
-		WAFImperva:    {EncodingWhitespace, EncodingHTMLHex},
-		WAFIncapsula:  {EncodingUnicode, EncodingCase},
+		WAFCloudflare:  {EncodingUnicode, EncodingURL},
+		WAFAkamai:      {EncodingDoubleURL, EncodingCase},
+		WAFKona:        {EncodingDoubleURL, EncodingComment},
+		WAFImperva:     {EncodingWhitespace, EncodingHTMLHex},
+		WAFIncapsula:   {EncodingUnicode, EncodingCase},
 		WAFModSecurity: {EncodingComment, EncodingCase, EncodingNull},
-		WAFAFW:        {EncodingDoubleURL, EncodingMixed},
-		WAFSuccuri:    {EncodingUnicode, EncodingCase},
-		WAFBarracuda:  {EncodingURL, EncodingCase},
-		WAFCitrix:     {EncodingDoubleURL, EncodingWhitespace},
-		WAFNginx:      {EncodingURL, EncodingUnicode},
-		WAFStackPath:  {EncodingURL, EncodingComment},
-		WAFBIG_IP_ASM: {EncodingDoubleURL, EncodingCase},
-		WAFFortiWeb:   {EncodingURL, EncodingUnicode},
-		WAFRadware:    {EncodingDoubleURL, EncodingComment},
-		WAFWordfence:  {EncodingURL, EncodingWhitespace},
+		WAFAFW:         {EncodingDoubleURL, EncodingMixed},
+		WAFSuccuri:     {EncodingUnicode, EncodingCase},
+		WAFBarracuda:   {EncodingURL, EncodingCase},
+		WAFCitrix:      {EncodingDoubleURL, EncodingWhitespace},
+		WAFNginx:       {EncodingURL, EncodingUnicode},
+		WAFStackPath:   {EncodingURL, EncodingComment},
+		WAFBIG_IP_ASM:  {EncodingDoubleURL, EncodingCase},
+		WAFFortiWeb:    {EncodingURL, EncodingUnicode},
+		WAFRadware:     {EncodingDoubleURL, EncodingComment},
+		WAFWordfence:   {EncodingURL, EncodingWhitespace},
 	}
 
 	if enc, ok := strategies[wafType]; ok {
@@ -259,10 +259,10 @@ func (e *Encoder) OctalEncode(payload string) string {
 func (e *Encoder) MixedEncode(payload string) string {
 	var result strings.Builder
 	encodings := []func(rune) string{
-		func(r rune) string { return string(r) },                                // plain
-		func(r rune) string { return fmt.Sprintf("&#%d;", r) },                  // decimal
-		func(r rune) string { return fmt.Sprintf("&#x%x;", r) },                 // hex
-		func(r rune) string { return url.QueryEscape(string(r)) },               // URL
+		func(r rune) string { return string(r) },                  // plain
+		func(r rune) string { return fmt.Sprintf("&#%d;", r) },    // decimal
+		func(r rune) string { return fmt.Sprintf("&#x%x;", r) },   // hex
+		func(r rune) string { return url.QueryEscape(string(r)) }, // URL
 	}
 
 	i := 0

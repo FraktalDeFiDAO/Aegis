@@ -2,10 +2,10 @@
 package scrape
 
 import (
-	"crypto/sha1"
-	"encoding/hex"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"log/slog"
 	"net/http"
@@ -89,19 +89,19 @@ type ErrorRecord struct {
 }
 
 type Scraper struct {
-	cfg         Config
-	scopeFile   string
-	scope       *scope.Scope
-	downloads   sync.Map
-	manifestMu  sync.Mutex
-	manifest    Manifest
-	client      *http.Client
-	pageClient  *http.Client
-	log         *slog.Logger
-	store       *scrapeStore
-	browserErr  error
-	browser     *rod.Browser
-	browserMu   sync.Mutex
+	cfg        Config
+	scopeFile  string
+	scope      *scope.Scope
+	downloads  sync.Map
+	manifestMu sync.Mutex
+	manifest   Manifest
+	client     *http.Client
+	pageClient *http.Client
+	log        *slog.Logger
+	store      *scrapeStore
+	browserErr error
+	browser    *rod.Browser
+	browserMu  sync.Mutex
 }
 
 func (s *Scraper) getBrowser() (*rod.Browser, error) {
@@ -234,12 +234,16 @@ func ScrapeScope(projectDir string, scopePath string, cfg Config) error {
 
 	jar, _ := cookiejar.New(nil)
 	pageClient := &http.Client{
-		Timeout: time.Duration(cfg.PageTimeoutSeconds) * time.Second,
-		Jar:     jar,
+		Timeout:       time.Duration(cfg.PageTimeoutSeconds) * time.Second,
+		Jar:           jar,
+		Transport:     &http.Transport{TLSClientConfig: &tls.Config{}},
+		CheckRedirect: validator.RedirectPolicy(cfg.AllowPrivateHosts),
 	}
 	downloadClient := &http.Client{
-		Timeout: time.Duration(cfg.DownloadTimeoutSeconds) * time.Second,
-		Jar:     jar,
+		Timeout:       time.Duration(cfg.DownloadTimeoutSeconds) * time.Second,
+		Jar:           jar,
+		Transport:     &http.Transport{TLSClientConfig: &tls.Config{}},
+		CheckRedirect: validator.RedirectPolicy(cfg.AllowPrivateHosts),
 	}
 
 	s := &Scraper{
@@ -1390,8 +1394,9 @@ func buildResourcePath(baseDir string, rawURL string) (string, error) {
 	filename := sanitizeSegment(filepath.Base(relPath))
 
 	if parsed.RawQuery != "" {
-		hash := sha1.Sum([]byte(parsed.RawQuery))
-		filename = filename + "__q_" + hex.EncodeToString(hash[:8])
+		h := fnv.New64a()
+		_, _ = h.Write([]byte(parsed.RawQuery))
+		filename = filename + "__q_" + fmt.Sprintf("%016x", h.Sum64())
 	}
 
 	finalDir, err := ensureDir(dir)

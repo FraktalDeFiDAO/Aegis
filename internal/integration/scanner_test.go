@@ -174,3 +174,48 @@ func TestCompleteScanner_Scan_StaticComponents(t *testing.T) {
 		t.Fatalf("expected API count in summary, got %+v", result.Summary)
 	}
 }
+
+func TestMergeHelpers_RecomputeCountsAndDeduplicate(t *testing.T) {
+	t.Parallel()
+
+	assetsResult := &assets.DiscoveryResult{
+		Assets: []assets.Asset{
+			{URL: "https://example.com/a.js", Type: assets.AssetJavaScript, Size: 10},
+		},
+		TotalCount: 1,
+		ByType:     map[assets.AssetType]int{assets.AssetJavaScript: 1},
+	}
+	mergeAssets(assetsResult, &assets.DiscoveryResult{
+		Assets: []assets.Asset{
+			{URL: "https://example.com/a.js", Type: assets.AssetJavaScript, Size: 10},
+			{URL: "https://example.com/site.css", Type: assets.AssetCSS, Size: 5},
+		},
+		ExternalHosts: []string{"cdn.example.com"},
+	})
+	if assetsResult.TotalCount != 2 {
+		t.Fatalf("expected recomputed asset total, got %+v", assetsResult)
+	}
+	if assetsResult.ByType[assets.AssetCSS] != 1 {
+		t.Fatalf("expected css count to be recomputed, got %+v", assetsResult.ByType)
+	}
+
+	apiResult := &apiextract.ExtractResult{
+		Endpoints: []apiextract.APIEndpoint{
+			{URL: "https://example.com/api/users", Method: "GET", Technology: "REST"},
+		},
+		REST:       []apiextract.APIEndpoint{{URL: "https://example.com/api/users", Method: "GET", Technology: "REST"}},
+		TotalCount: 1,
+	}
+	mergeAPIs(apiResult, &apiextract.ExtractResult{
+		Endpoints: []apiextract.APIEndpoint{
+			{URL: "https://example.com/api/users", Method: "GET", Technology: "REST"},
+			{URL: "https://example.com/graphql", Method: "POST", Technology: "GraphQL"},
+		},
+	})
+	if apiResult.TotalCount != 2 {
+		t.Fatalf("expected deduplicated api total, got %+v", apiResult)
+	}
+	if len(apiResult.GraphQL) != 1 {
+		t.Fatalf("expected graphql slice to stay in sync, got %+v", apiResult.GraphQL)
+	}
+}

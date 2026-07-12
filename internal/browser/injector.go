@@ -66,12 +66,12 @@ func (i *Injector) setupConsoleListener() {
 
 // InjectionResult holds the result of a payload injection
 type InjectionResult struct {
-	Success       bool     `json:"success"`
-	DialogTriggered bool   `json:"dialog_triggered"`
-	DialogMessage string   `json:"dialog_message,omitempty"`
-	ConsoleErrors []string `json:"console_errors,omitempty"`
-	Exception     string   `json:"exception,omitempty"`
-	Evidence      string   `json:"evidence,omitempty"`
+	Success         bool     `json:"success"`
+	DialogTriggered bool     `json:"dialog_triggered"`
+	DialogMessage   string   `json:"dialog_message,omitempty"`
+	ConsoleErrors   []string `json:"console_errors,omitempty"`
+	Exception       string   `json:"exception,omitempty"`
+	Evidence        string   `json:"evidence,omitempty"`
 }
 
 // InjectPayload injects a payload into a specified element

@@ -1,6 +1,6 @@
 module github.com/coppertone/bug-hunter/app/aegis
 
-go 1.25
+go 1.24
 
 require (
 	github.com/go-rod/rod v0.99.1

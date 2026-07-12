@@ -56,7 +56,6 @@ func runScreenshotCapture(targetURL, callbackURL, outputDir string, headless boo
 
 	fmt.Println("\n[*] Launching browser...")
 	l := launcher.New().
-		Set("disable-web-security").
 		Set("no-sandbox").
 		Set("disable-dev-shm-usage")
 

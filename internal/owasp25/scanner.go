@@ -11,7 +11,7 @@ import (
 )
 
 // Finding represents an OWASP Top 25 vulnerability finding
- type Finding struct {
+type Finding struct {
 	Category    Category `json:"category"`
 	Type        string   `json:"type"`
 	Severity    string   `json:"severity"`
@@ -29,46 +29,46 @@ import (
 }
 
 // Scanner scans for OWASP Top 25 vulnerabilities
- type Scanner struct {
-	scanPath       string
-	workers        int
+type Scanner struct {
+	scanPath          string
+	workers           int
 	enabledCategories []Category
 }
 
 // ScannerOption configures the scanner
- type ScannerOption func(*Scanner)
+type ScannerOption func(*Scanner)
 
 // WithWorkers sets the number of concurrent workers
- func WithWorkers(workers int) ScannerOption {
+func WithWorkers(workers int) ScannerOption {
 	return func(s *Scanner) {
 		s.workers = workers
 	}
 }
 
 // WithCategories limits scanning to specific OWASP categories
- func WithCategories(cats ...Category) ScannerOption {
+func WithCategories(cats ...Category) ScannerOption {
 	return func(s *Scanner) {
 		s.enabledCategories = cats
 	}
 }
 
 // NewScanner creates a new OWASP Top 25 scanner
- func NewScanner(scanPath string, opts ...ScannerOption) *Scanner {
+func NewScanner(scanPath string, opts ...ScannerOption) *Scanner {
 	s := &Scanner{
 		scanPath:          scanPath,
 		workers:           10,
 		enabledCategories: GetAllCategories(),
 	}
-	
+
 	for _, opt := range opts {
 		opt(s)
 	}
-	
+
 	return s
 }
 
 // Scan performs a full OWASP Top 25 scan
- func (s *Scanner) Scan() ([]Finding, error) {
+func (s *Scanner) Scan() ([]Finding, error) {
 	var findings []Finding
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -121,12 +121,12 @@ import (
 }
 
 // ScanString scans a string for OWASP vulnerabilities (useful for dynamic content)
- func (s *Scanner) ScanString(content, source string) []Finding {
+func (s *Scanner) ScanString(content, source string) []Finding {
 	return s.scanContent(content, source)
 }
 
 // scanContent scans file content for all enabled OWASP categories
- func (s *Scanner) scanContent(content, filePath string) []Finding {
+func (s *Scanner) scanContent(content, filePath string) []Finding {
 	var findings []Finding
 	lines := strings.Split(content, "\n")
 
@@ -166,7 +166,7 @@ import (
 }
 
 // ScanCategory scans for a specific OWASP category
- func (s *Scanner) ScanCategory(content, filePath string, cat Category) []Finding {
+func (s *Scanner) ScanCategory(content, filePath string, cat Category) []Finding {
 	var findings []Finding
 	lines := strings.Split(content, "\n")
 
@@ -203,7 +203,7 @@ import (
 }
 
 // GetCategoryStats returns statistics for each category
- func (s *Scanner) GetCategoryStats(findings []Finding) map[Category]int {
+func (s *Scanner) GetCategoryStats(findings []Finding) map[Category]int {
 	stats := make(map[Category]int)
 	for _, f := range findings {
 		stats[f.Category]++
@@ -212,7 +212,7 @@ import (
 }
 
 // GetSeverityStats returns statistics by severity
- func (s *Scanner) GetSeverityStats(findings []Finding) map[string]int {
+func (s *Scanner) GetSeverityStats(findings []Finding) map[string]int {
 	stats := make(map[string]int)
 	for _, f := range findings {
 		stats[f.Severity]++
@@ -221,10 +221,10 @@ import (
 }
 
 // deduplicateFindings removes duplicate findings
- func deduplicateFindings(findings []Finding) []Finding {
+func deduplicateFindings(findings []Finding) []Finding {
 	seen := make(map[string]bool)
 	var unique []Finding
-	
+
 	for _, f := range findings {
 		key := fmt.Sprintf("%s:%s:%d:%s", f.Category.String(), f.File, f.Line, f.Type)
 		if !seen[key] {
@@ -232,19 +232,19 @@ import (
 			unique = append(unique, f)
 		}
 	}
-	
+
 	return unique
 }
 
 // hashFinding creates a unique hash for a finding
- func hashFinding(f Finding) string {
-	hash := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%d:%s", 
+func hashFinding(f Finding) string {
+	hash := sha256.Sum256([]byte(fmt.Sprintf("%s:%s:%d:%s",
 		f.Category.String(), f.File, f.Line, f.Type)))
 	return fmt.Sprintf("%x", hash[:8])
 }
 
 // truncateString truncates a string to max length
- func truncateString(s string, maxLen int) string {
+func truncateString(s string, maxLen int) string {
 	if len(s) > maxLen {
 		return s[:maxLen] + "..."
 	}
@@ -252,7 +252,7 @@ import (
 }
 
 // getContext returns surrounding lines for context
- func getContext(lines []string, lineNum int) string {
+func getContext(lines []string, lineNum int) string {
 	start := lineNum - 2
 	if start < 0 {
 		start = 0
@@ -261,12 +261,12 @@ import (
 	if end > len(lines) {
 		end = len(lines)
 	}
-	
+
 	return strings.Join(lines[start:end], "\n")
 }
 
 // isValidTextFile checks if file extension should be scanned
- func isValidTextFile(ext string) bool {
+func isValidTextFile(ext string) bool {
 	ext = strings.ToLower(ext)
 	textExtensions := []string{
 		// Web files
@@ -292,27 +292,27 @@ import (
 }
 
 // AddCustomPattern adds a custom detection pattern to a category
- func (s *Scanner) AddCustomPattern(cat Category, pattern Pattern) error {
+func (s *Scanner) AddCustomPattern(cat Category, pattern Pattern) error {
 	info, ok := CategoryDatabase[cat]
 	if !ok {
 		return fmt.Errorf("invalid category: %v", cat)
 	}
-	
+
 	info.DetectionPatterns = append(info.DetectionPatterns, pattern)
 	CategoryDatabase[cat] = info
-	
+
 	return nil
 }
 
 // Report generates a summary report of findings
- func (s *Scanner) Report(findings []Finding) string {
+func (s *Scanner) Report(findings []Finding) string {
 	var sb strings.Builder
-	
+
 	sb.WriteString("=== OWASP Top 25 Security Scan Report ===\n\n")
-	
+
 	// Overall stats
 	sb.WriteString(fmt.Sprintf("Total Findings: %d\n\n", len(findings)))
-	
+
 	// By severity
 	sb.WriteString("Findings by Severity:\n")
 	severityStats := s.GetSeverityStats(findings)
@@ -322,7 +322,7 @@ import (
 		}
 	}
 	sb.WriteString("\n")
-	
+
 	// By category
 	sb.WriteString("Findings by OWASP Category:\n")
 	catStats := s.GetCategoryStats(findings)
@@ -330,7 +330,7 @@ import (
 		sb.WriteString(fmt.Sprintf("  %s: %d\n", cat.String(), count))
 	}
 	sb.WriteString("\n")
-	
+
 	// Top findings
 	if len(findings) > 0 {
 		sb.WriteString("Critical/High Priority Findings:\n")
@@ -341,6 +341,6 @@ import (
 			}
 		}
 	}
-	
+
 	return sb.String()
 }

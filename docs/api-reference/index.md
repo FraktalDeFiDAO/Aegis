@@ -1,138 +1,105 @@
 # API Reference
 
-## Coordinator Service API
+Aegis exposes a small REST API for starting crawls and checking health. The API is
+not a general coordinator service and does not expose Web3/Android/Desktop analyzer
+endpoints.
 
-### GET /api/v1/status
-Returns the current status of the coordinator service.
+## Authentication
 
-**Response:**
+All endpoints except process startup require authentication unless the server is
+started with `AEGIS_API_ALLOW_UNAUTH=true` for development.
+
+Accepted credentials:
+
+- `Authorization: Bearer <token>`
+- `X-API-Key: <AEGIS_API_TOKEN>`
+
+Server refuses to start without `AEGIS_API_TOKEN` unless `AEGIS_API_ALLOW_UNAUTH=true`.
+
+## Rate limiting
+
+Per-client token-bucket rate limit:
+
+- `AEGIS_API_RATE_PER_MIN` default `60`
+- `AEGIS_API_RATE_BURST` default `10`
+- `AEGIS_API_BUCKET_TTL_SEC` default `600`
+- `AEGIS_API_MAX_BUCKETS` default `10000`
+- `AEGIS_API_SWEEP_EVERY_SEC` default `60`
+
+Bucket storage is bounded by TTL and max-bucket eviction.
+
+## Dump quota
+
+API crawls write to `api_dump/<timestamp>` by default.
+
+- `AEGIS_API_DUMP_ROOT` default `api_dump`
+- `AEGIS_API_DUMP_MAX_DIRS` default `16`
+
+Oldest directories are pruned when the quota is exceeded.
+
+## GET /health
+
+Health check.
+
+### Response
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+```json
+{"ok":true}
+```
+
+## POST /crawl
+
+Start an asynchronous crawl.
+
+### Request
+
+```http
+POST /crawl HTTP/1.1
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
 ```json
 {
-  "status": "healthy",
-  "timestamp": "2023-10-01T10:00:00Z",
-  "active_analyzers": 3,
-  "pending_jobs": 5
+  "target": "https://example.local",
+  "maxDepth": 3,
+  "userAgent": "AegisBot/1.0"
 }
 ```
 
-### POST /api/v1/analyze
-Starts a new analysis job.
+The exact config maps to the crawler config accepted by the Go API. Invalid JSON
+returns `400`. Missing/invalid auth returns `401`. Rate-limit exceed returns `429`.
 
-**Request Body:**
+### Response
+
+```http
+HTTP/1.1 202 Accepted
+Content-Type: application/json
+```
+
 ```json
 {
-  "target_url": "https://example.com",
-  "target_type": "web2",
-  "analysis_depth": "full",
-  "auth_session": "session_data_here"
+  "status": "accepted"
 }
 ```
 
-**Response:**
+The crawl runs asynchronously and writes artifacts to the configured API dump root.
+
+## Error responses
+
+Errors are sanitized. The API must not leak internal stack traces or raw filesystem
+paths in response bodies.
+
 ```json
-{
-  "job_id": "abc123",
-  "status": "submitted",
-  "estimated_completion": "2023-10-01T11:00:00Z"
-}
+{"error":"unauthorized"}
 ```
 
-### GET /api/v1/job/{job_id}
-Gets the status and results of a specific job.
+## Contract tests
 
-**Response:**
-```json
-{
-  "job_id": "abc123",
-  "status": "completed",
-  "results": {
-    "high_severity": 2,
-    "medium_severity": 5,
-    "low_severity": 10,
-    "findings": [...]
-  }
-}
-```
-
-## Analyzer Service APIs
-
-### Web2 Analyzer
-#### POST /analyze/web2
-Analyzes a web application.
-
-**Request Body:**
-```json
-{
-  "url": "https://example.com",
-  "auth_session": "session_data",
-  "max_depth": 3,
-  "user_agent": "BugHunter/1.0"
-}
-```
-
-### Web3 Analyzer
-#### POST /analyze/web3
-Analyzes a web3/dapp application.
-
-**Request Body:**
-```json
-{
-  "contract_address": "0x...",
-  "rpc_endpoint": "https://...",
-  "abi": "contract_abi_here"
-}
-```
-
-### Android Analyzer
-#### POST /analyze/android
-Analyzes an Android APK.
-
-**Request Body:**
-```json
-{
-  "apk_url": "https://...",
-  "sha256": "hash_of_apk"
-}
-```
-
-### Desktop Analyzer
-#### POST /analyze/desktop
-Analyzes a desktop application.
-
-**Request Body:**
-```json
-{
-  "binary_url": "https://...",
-  "platform": "linux|windows|macos"
-}
-```
-
-## Scanner Service API
-
-### POST /scan
-Performs a security scan on provided data.
-
-**Request Body:**
-```json
-{
-  "target_data": "data_to_scan",
-  "scan_types": ["sast", "dast", "secret"],
-  "ruleset": "default"
-}
-```
-
-## Reporter Service API
-
-### GET /report/{job_id}
-Generates a security report for a completed job.
-
-**Response:**
-```json
-{
-  "report_id": "rep123",
-  "job_id": "abc123",
-  "generated_at": "2023-10-01T10:30:00Z",
-  "vulnerabilities": [...],
-  "recommendations": [...]
-}
-```
+The API behavior contract is defined in `docs/SPEC.md` §7.4.4 and should be encoded
+in `internal/api/api_spec_test.go`.

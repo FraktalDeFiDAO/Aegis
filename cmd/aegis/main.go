@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"html/template"
 	"os"
-	"time"
 
 	"github.com/coppertone/bug-hunter/app/aegis/internal/api"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/crawler"
@@ -206,22 +205,20 @@ func apiCmd() *cobra.Command {
 	return cmd
 }
 
+// benchCmd is intentionally not implemented. Run benchmarks with `go test -bench`
+// against internal packages instead. The cobra command is registered as a
+// stub so users who scripted against the v0.0.1 CLI surface get a clear error
+// rather than a silent no-op.
 func benchCmd() *cobra.Command {
 	var target string
 	cmd := &cobra.Command{
 		Use:   "bench",
-		Short: "Run performance benchmarks",
+		Short: "Placeholder — use `go test -bench` for actual benchmarks",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			start := time.Now()
-			// Simple benchmark logic
-			fmt.Printf("Benchmarking target: %s\n", target)
-			// Implementation...
-			duration := time.Since(start)
-			fmt.Printf("Completed in %v\n", duration)
-			return nil
+			return fmt.Errorf("bench command is not implemented; run 'go test -bench=. ./...' in the package you want to benchmark (target hint: %q)", target)
 		},
 	}
-	cmd.Flags().StringVar(&target, "target", "", "Target URL for benchmarking")
+	cmd.Flags().StringVar(&target, "target", "", "Ignored — kept for v0.0.1 CLI compatibility")
 	return cmd
 }
 

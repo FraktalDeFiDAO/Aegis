@@ -20,30 +20,30 @@ import (
 
 // CompleteScanResult contains all scan results
 type CompleteScanResult struct {
-	Target      string                        `json:"target"`
-	XSS         []xss.XSSFinding              `json:"xss,omitempty"`
-	Assets      *assets.DiscoveryResult       `json:"assets,omitempty"`
-	APIs        *apiextract.ExtractResult     `json:"apis,omitempty"`
-	Pages       []crawler.Page                `json:"pages,omitempty"`
-	Platform    *platform.Detection           `json:"platform,omitempty"`
-	Exploitable []UnifiedFinding              `json:"exploitable,omitempty"`
-	OWASP       []owasp25.Finding             `json:"owasp,omitempty"`
-	Secrets     []SecretFinding               `json:"secrets,omitempty"`
-	Summary     ScanSummary                   `json:"summary"`
+	Target      string                    `json:"target"`
+	XSS         []xss.XSSFinding          `json:"xss,omitempty"`
+	Assets      *assets.DiscoveryResult   `json:"assets,omitempty"`
+	APIs        *apiextract.ExtractResult `json:"apis,omitempty"`
+	Pages       []crawler.Page            `json:"pages,omitempty"`
+	Platform    *platform.Detection       `json:"platform,omitempty"`
+	Exploitable []UnifiedFinding          `json:"exploitable,omitempty"`
+	OWASP       []owasp25.Finding         `json:"owasp,omitempty"`
+	Secrets     []SecretFinding           `json:"secrets,omitempty"`
+	Summary     ScanSummary               `json:"summary"`
 }
 
 // ScanSummary provides overview of findings
 type ScanSummary struct {
-	TotalXSS            int `json:"total_xss"`
-	TotalAssets         int `json:"total_assets"`
-	TotalAPIs           int `json:"total_apis"`
-	TotalPages          int `json:"total_pages"`
-	TotalExploitable    int `json:"total_exploitable"`
-	TotalOWASP          int `json:"total_owasp"`
-	CriticalCount       int `json:"critical_count"`
-	HighCount           int `json:"high_count"`
-	MediumCount         int `json:"medium_count"`
-	LowCount            int `json:"low_count"`
+	TotalXSS         int `json:"total_xss"`
+	TotalAssets      int `json:"total_assets"`
+	TotalAPIs        int `json:"total_apis"`
+	TotalPages       int `json:"total_pages"`
+	TotalExploitable int `json:"total_exploitable"`
+	TotalOWASP       int `json:"total_owasp"`
+	CriticalCount    int `json:"critical_count"`
+	HighCount        int `json:"high_count"`
+	MediumCount      int `json:"medium_count"`
+	LowCount         int `json:"low_count"`
 }
 
 // SecretFinding represents a discovered secret
@@ -64,43 +64,43 @@ type CompleteScanner struct {
 	platformDetector *platform.Detector
 	exploitableScan  *exploitable.Scanner
 	owaspScanner     *owasp25.Scanner
-	
+
 	browser *rod.Browser
 }
 
 // NewCompleteScanner creates a new complete scanner
 func NewCompleteScanner() (*CompleteScanner, error) {
 	s := &CompleteScanner{}
-	
+
 	var err error
-	
+
 	// Initialize all scanners
 	s.xssScanner, err = xss.NewScanner()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create XSS scanner: %w", err)
 	}
-	
+
 	s.assetDiscoverer, err = assets.NewDiscoverer()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create asset discoverer: %w", err)
 	}
-	
+
 	s.apiExtractor = apiextract.NewExtractor()
-	
+
 	s.deepCrawler, err = crawler.NewDeepCrawler()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create deep crawler: %w", err)
 	}
-	
+
 	s.contentAcquirer, err = content.NewAcquirer()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create content acquirer: %w", err)
 	}
-	
+
 	s.platformDetector = platform.NewDetector(30)
 	s.exploitableScan = exploitable.NewScanner()
 	s.owaspScanner = owasp25.NewScanner("")
-	
+
 	return s, nil
 }
 
@@ -109,10 +109,10 @@ func (s *CompleteScanner) Scan(target Target) (*CompleteScanResult, error) {
 	result := &CompleteScanResult{
 		Target: target.URL,
 	}
-	
+
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	
+
 	// 1. Platform Detection
 	wg.Add(1)
 	go func() {
@@ -124,7 +124,7 @@ func (s *CompleteScanner) Scan(target Target) (*CompleteScanResult, error) {
 			mu.Unlock()
 		}
 	}()
-	
+
 	// 2. XSS Scanning
 	wg.Add(1)
 	go func() {
@@ -134,7 +134,7 @@ func (s *CompleteScanner) Scan(target Target) (*CompleteScanResult, error) {
 		result.XSS = findings
 		mu.Unlock()
 	}()
-	
+
 	// 3. Asset Discovery
 	wg.Add(1)
 	go func() {
@@ -146,12 +146,12 @@ func (s *CompleteScanner) Scan(target Target) (*CompleteScanResult, error) {
 			mu.Unlock()
 		}
 	}()
-	
+
 	// 4. API Extraction (requires browser page)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		
+
 		// For now, do static extraction
 		apis, err := s.apiExtractor.Extract(target.URL, nil)
 		if err == nil {
@@ -160,7 +160,7 @@ func (s *CompleteScanner) Scan(target Target) (*CompleteScanResult, error) {
 			mu.Unlock()
 		}
 	}()
-	
+
 	// 5. Exploitable Software Scan
 	if len(target.Ports) > 0 {
 		wg.Add(1)
@@ -172,7 +172,7 @@ func (s *CompleteScanner) Scan(target Target) (*CompleteScanResult, error) {
 			mu.Unlock()
 		}()
 	}
-	
+
 	// 6. OWASP Scan
 	wg.Add(1)
 	go func() {
@@ -186,12 +186,12 @@ func (s *CompleteScanner) Scan(target Target) (*CompleteScanResult, error) {
 		result.OWASP = findings
 		mu.Unlock()
 	}()
-	
+
 	wg.Wait()
-	
+
 	// Calculate summary
 	result.Summary = s.calculateSummary(result)
-	
+
 	return result, nil
 }
 
@@ -200,144 +200,129 @@ func (s *CompleteScanner) ScanWithDeepCrawl(ctx context.Context, target Target, 
 	result := &CompleteScanResult{
 		Target: target.URL,
 	}
-	
+
 	// 1. Deep Crawl
 	pages, err := s.deepCrawler.Crawl(ctx, target.URL)
 	if err != nil {
 		return nil, fmt.Errorf("deep crawl failed: %w", err)
 	}
-	
+
 	// Limit pages
 	if len(pages) > maxPages {
 		pages = pages[:maxPages]
 	}
 	result.Pages = pages
-	
+
 	// 2. Scan each discovered page
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	semaphore := make(chan struct{}, 5) // Limit concurrent scans
-	
+
 	for _, page := range pages {
 		wg.Add(1)
 		semaphore <- struct{}{}
-		
+
 		go func(p crawler.Page) {
 			defer wg.Done()
 			defer func() { <-semaphore }()
-			
+
 			// XSS scan
 			xssFindings := s.xssScanner.ScanTarget(p.URL)
 			mu.Lock()
 			result.XSS = append(result.XSS, xssFindings...)
 			mu.Unlock()
-			
+
 			// Asset discovery
 			if pageAssets, err := s.assetDiscoverer.Discover(p.URL); err == nil {
 				mu.Lock()
 				if result.Assets == nil {
 					result.Assets = pageAssets
 				} else {
-					// Merge assets
-					for _, asset := range pageAssets.Assets {
-						// Deduplicate
-						found := false
-						for _, existing := range result.Assets.Assets {
-							if existing.URL == asset.URL {
-								found = true
-								break
-							}
-						}
-						if !found {
-							result.Assets.Assets = append(result.Assets.Assets, asset)
-						}
-					}
+					mergeAssets(result.Assets, pageAssets)
 				}
 				mu.Unlock()
 			}
-			
+
 			// API extraction
 			if apis, err := s.apiExtractor.Extract(p.URL, nil); err == nil {
 				mu.Lock()
 				if result.APIs == nil {
 					result.APIs = apis
 				} else {
-					// Merge APIs
-					result.APIs.Endpoints = append(result.APIs.Endpoints, apis.Endpoints...)
-					result.APIs.TotalCount += apis.TotalCount
+					mergeAPIs(result.APIs, apis)
 				}
 				mu.Unlock()
 			}
-			
+
 		}(page)
 	}
-	
+
 	wg.Wait()
-	
+
 	// Calculate summary
 	result.Summary = s.calculateSummary(result)
-	
+
 	return result, nil
 }
 
 // scanExploitable scans for exploitable software
 func (s *CompleteScanner) scanExploitable(target Target) []UnifiedFinding {
 	var findings []UnifiedFinding
-	
+
 	results := s.exploitableScan.ScanTarget(target.Host, target.Ports)
-	
+
 	for _, f := range results {
 		switch finding := f.(type) {
 		case *exploitable.RedisFinding:
 			findings = append(findings, UnifiedFinding{
-				Category:    "exploitable",
-				Type:        finding.Type,
-				Severity:    finding.Severity,
-				CVSS:        finding.CVSS,
-				Host:        finding.Host,
-				Port:        finding.Port,
-				Summary:     finding.Summary,
+				Category: "exploitable",
+				Type:     finding.Type,
+				Severity: finding.Severity,
+				CVSS:     finding.CVSS,
+				Host:     finding.Host,
+				Port:     finding.Port,
+				Summary:  finding.Summary,
 			})
 		case *exploitable.MongoDBFinding:
 			findings = append(findings, UnifiedFinding{
-				Category:    "exploitable",
-				Type:        finding.Type,
-				Severity:    finding.Severity,
-				CVSS:        finding.CVSS,
-				Host:        finding.Host,
-				Port:        finding.Port,
-				Summary:     finding.Summary,
+				Category: "exploitable",
+				Type:     finding.Type,
+				Severity: finding.Severity,
+				CVSS:     finding.CVSS,
+				Host:     finding.Host,
+				Port:     finding.Port,
+				Summary:  finding.Summary,
 			})
 		case *exploitable.ElasticsearchFinding:
 			findings = append(findings, UnifiedFinding{
-				Category:    "exploitable",
-				Type:        finding.Type,
-				Severity:    finding.Severity,
-				CVSS:        finding.CVSS,
-				Host:        finding.Host,
-				Port:        finding.Port,
-				Summary:     finding.Summary,
+				Category: "exploitable",
+				Type:     finding.Type,
+				Severity: finding.Severity,
+				CVSS:     finding.CVSS,
+				Host:     finding.Host,
+				Port:     finding.Port,
+				Summary:  finding.Summary,
 			})
 		case *exploitable.JenkinsFinding:
 			findings = append(findings, UnifiedFinding{
-				Category:    "exploitable",
-				Type:        finding.Type,
-				Severity:    finding.Severity,
-				CVSS:        finding.CVSS,
-				Host:        finding.Host,
-				Port:        finding.Port,
-				Summary:     finding.Summary,
+				Category: "exploitable",
+				Type:     finding.Type,
+				Severity: finding.Severity,
+				CVSS:     finding.CVSS,
+				Host:     finding.Host,
+				Port:     finding.Port,
+				Summary:  finding.Summary,
 			})
 		}
 	}
-	
+
 	return findings
 }
 
 // calculateSummary calculates scan summary
 func (s *CompleteScanner) calculateSummary(result *CompleteScanResult) ScanSummary {
 	summary := ScanSummary{}
-	
+
 	// XSS
 	summary.TotalXSS = len(result.XSS)
 	for _, f := range result.XSS {
@@ -352,20 +337,20 @@ func (s *CompleteScanner) calculateSummary(result *CompleteScanResult) ScanSumma
 			summary.LowCount++
 		}
 	}
-	
+
 	// Assets
 	if result.Assets != nil {
 		summary.TotalAssets = result.Assets.TotalCount
 	}
-	
+
 	// APIs
 	if result.APIs != nil {
 		summary.TotalAPIs = result.APIs.TotalCount
 	}
-	
+
 	// Pages
 	summary.TotalPages = len(result.Pages)
-	
+
 	// Exploitable
 	summary.TotalExploitable = len(result.Exploitable)
 	for _, f := range result.Exploitable {
@@ -380,7 +365,7 @@ func (s *CompleteScanner) calculateSummary(result *CompleteScanResult) ScanSumma
 			summary.LowCount++
 		}
 	}
-	
+
 	// OWASP
 	summary.TotalOWASP = len(result.OWASP)
 	for _, f := range result.OWASP {
@@ -395,8 +380,86 @@ func (s *CompleteScanner) calculateSummary(result *CompleteScanResult) ScanSumma
 			summary.LowCount++
 		}
 	}
-	
+
 	return summary
+}
+
+func mergeAssets(dst *assets.DiscoveryResult, src *assets.DiscoveryResult) {
+	if dst == nil || src == nil {
+		return
+	}
+
+	seen := make(map[string]struct{}, len(dst.Assets))
+	for _, asset := range dst.Assets {
+		seen[asset.URL] = struct{}{}
+	}
+	for _, asset := range src.Assets {
+		if _, ok := seen[asset.URL]; ok {
+			continue
+		}
+		seen[asset.URL] = struct{}{}
+		dst.Assets = append(dst.Assets, asset)
+	}
+	dst.ExternalHosts = append(dst.ExternalHosts, src.ExternalHosts...)
+	recomputeAssetStats(dst)
+}
+
+func recomputeAssetStats(result *assets.DiscoveryResult) {
+	if result == nil {
+		return
+	}
+
+	result.TotalCount = len(result.Assets)
+	result.TotalSize = 0
+	result.ByType = make(map[assets.AssetType]int)
+
+	hosts := make(map[string]struct{}, len(result.ExternalHosts))
+	var externalHosts []string
+	for _, host := range result.ExternalHosts {
+		if _, ok := hosts[host]; ok {
+			continue
+		}
+		hosts[host] = struct{}{}
+		externalHosts = append(externalHosts, host)
+	}
+
+	for _, asset := range result.Assets {
+		result.ByType[asset.Type]++
+		result.TotalSize += asset.Size
+	}
+	result.ExternalHosts = externalHosts
+}
+
+func mergeAPIs(dst *apiextract.ExtractResult, src *apiextract.ExtractResult) {
+	if dst == nil || src == nil {
+		return
+	}
+
+	seen := make(map[string]struct{}, len(dst.Endpoints))
+	for _, endpoint := range dst.Endpoints {
+		seen[apiKey(endpoint)] = struct{}{}
+	}
+	for _, endpoint := range src.Endpoints {
+		key := apiKey(endpoint)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		dst.Endpoints = append(dst.Endpoints, endpoint)
+		switch endpoint.Technology {
+		case "REST":
+			dst.REST = append(dst.REST, endpoint)
+		case "GraphQL":
+			dst.GraphQL = append(dst.GraphQL, endpoint)
+		case "WebSocket":
+			dst.WebSocket = append(dst.WebSocket, endpoint)
+		}
+	}
+	dst.TotalCount = len(dst.Endpoints)
+}
+
+func apiKey(endpoint apiextract.APIEndpoint) string {
+	return endpoint.Technology + "|" + endpoint.Method + "|" + endpoint.URL
 }
 
 // Close cleans up all resources

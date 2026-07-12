@@ -23,6 +23,7 @@ import (
 	"github.com/coppertone/bug-hunter/app/aegis/internal/exploitable"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/owasp25"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/platform"
+	"github.com/coppertone/bug-hunter/app/aegis/internal/validator"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/waf"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/workflow"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/xss"
@@ -30,61 +31,62 @@ import (
 
 // ScanConfig holds scan configuration
 type ScanConfig struct {
-	Target          string
-	Host            string
-	Ports           []int
-	MaxPages        int
-	MaxDepth        int
-	Workers         int
-	Timeout         time.Duration
-	OutputDir       string
-	ScanXSS         bool
-	ScanAssets      bool
-	ScanAPIs        bool
-	ScanExploitable bool
-	ScanOWASP       bool
-	ScanPlatform    bool
-	DeepCrawl       bool
-	Verbose         bool
+	Target            string
+	Host              string
+	Ports             []int
+	MaxPages          int
+	MaxDepth          int
+	Workers           int
+	Timeout           time.Duration
+	OutputDir         string
+	ScanXSS           bool
+	ScanAssets        bool
+	ScanAPIs          bool
+	ScanExploitable   bool
+	ScanOWASP         bool
+	ScanPlatform      bool
+	DeepCrawl         bool
+	AllowPrivateHosts bool
+	Verbose           bool
 	// WAF Bypass options
-	WAFBypass       bool
-	WAFType         string
-	ElementFocus    string
-	EncodingLevel   int
-	ATOCheck        bool
-	CWEAll          bool
+	WAFBypass     bool
+	WAFType       string
+	ElementFocus  string
+	EncodingLevel int
+	ATOCheck      bool
+	CWEAll        bool
 	// Workflow options
-	WorkflowFile    string
-	WorkflowVars    map[string]string
+	WorkflowFile string
+	WorkflowVars map[string]string
 	// Browser automation script options
-	ScriptFile      string
-	ScriptHeadless  bool
+	ScriptFile     string
+	ScriptHeadless bool
 }
 
 // CompleteReport holds all scan results
 type CompleteReport struct {
-	ScanInfo      ScanInfo                    `json:"scan_info"`
-	Target        TargetInfo                  `json:"target"`
-	XSS           []xss.XSSFinding            `json:"xss_findings,omitempty"`
-	DOMXSS        *xss.DOMXSSReport           `json:"dom_xss_findings,omitempty"`
-	EnhancedXSS   *xss.ScanResult             `json:"enhanced_xss_findings,omitempty"`
-	WAFDetection  *waf.DetectionResult        `json:"waf_detection,omitempty"`
-	ATOFindings   []ato.ATOFinding            `json:"ato_findings,omitempty"`
-	Assets        *assets.DiscoveryResult     `json:"asset_discovery,omitempty"`
-	APIs          *apiextract.ExtractResult   `json:"api_endpoints,omitempty"`
-	Pages         []crawler.Page              `json:"discovered_pages,omitempty"`
-	Platform      *platform.Detection         `json:"platform_detection,omitempty"`
-	EOL           []platform.EOLInfo          `json:"eol_findings,omitempty"`
-	Exploitable   []ExploitableFinding        `json:"exploitable_findings,omitempty"`
-	OWASP         []owasp25.Finding           `json:"owasp_findings,omitempty"`
-	Summary       Summary                     `json:"summary"`
-	GeneratedAt   time.Time                   `json:"generated_at"`
+	ScanInfo     ScanInfo                  `json:"scan_info"`
+	Target       TargetInfo                `json:"target"`
+	XSS          []xss.XSSFinding          `json:"xss_findings,omitempty"`
+	DOMXSS       *xss.DOMXSSReport         `json:"dom_xss_findings,omitempty"`
+	EnhancedXSS  *xss.ScanResult           `json:"enhanced_xss_findings,omitempty"`
+	WAFDetection *waf.DetectionResult      `json:"waf_detection,omitempty"`
+	ATOFindings  []ato.ATOFinding          `json:"ato_findings,omitempty"`
+	Assets       *assets.DiscoveryResult   `json:"asset_discovery,omitempty"`
+	APIs         *apiextract.ExtractResult `json:"api_endpoints,omitempty"`
+	Pages        []crawler.Page            `json:"discovered_pages,omitempty"`
+	Platform     *platform.Detection       `json:"platform_detection,omitempty"`
+	EOL          []platform.EOLInfo        `json:"eol_findings,omitempty"`
+	Exploitable  []ExploitableFinding      `json:"exploitable_findings,omitempty"`
+	OWASP        []owasp25.Finding         `json:"owasp_findings,omitempty"`
+	Summary      Summary                   `json:"summary"`
+	GeneratedAt  time.Time                 `json:"generated_at"`
 }
 
 type ScanInfo struct {
-	StartedAt   time.Time     `json:"started_at"`
-	Duration    time.Duration `json:"duration"`
-	ScannerVersion string     `json:"scanner_version"`
+	StartedAt      time.Time     `json:"started_at"`
+	Duration       time.Duration `json:"duration"`
+	ScannerVersion string        `json:"scanner_version"`
 }
 
 type TargetInfo struct {
@@ -94,32 +96,32 @@ type TargetInfo struct {
 }
 
 type ExploitableFinding struct {
-	Type        string   `json:"type"`
-	Severity    string   `json:"severity"`
-	CVSS        float64  `json:"cvss"`
-	CVE         string   `json:"cve,omitempty"`
-	Host        string   `json:"host,omitempty"`
-	Port        int      `json:"port,omitempty"`
-	Service     string   `json:"service"`
-	Version     string   `json:"version,omitempty"`
-	Summary     string   `json:"summary"`
-	Remediation string   `json:"remediation,omitempty"`
+	Type        string  `json:"type"`
+	Severity    string  `json:"severity"`
+	CVSS        float64 `json:"cvss"`
+	CVE         string  `json:"cve,omitempty"`
+	Host        string  `json:"host,omitempty"`
+	Port        int     `json:"port,omitempty"`
+	Service     string  `json:"service"`
+	Version     string  `json:"version,omitempty"`
+	Summary     string  `json:"summary"`
+	Remediation string  `json:"remediation,omitempty"`
 }
 
 type Summary struct {
-	TotalXSS           int            `json:"total_xss"`
-	TotalDOMXSS        int            `json:"total_dom_xss"`
-	TotalEnhancedXSS   int            `json:"total_enhanced_xss"`
-	TotalATO           int            `json:"total_ato"`
-	TotalAssets        int            `json:"total_assets"`
-	TotalAPIs          int            `json:"total_apis"`
-	TotalPages         int            `json:"total_pages"`
-	TotalExploitable   int            `json:"total_exploitable"`
-	TotalOWASP         int            `json:"total_owasp"`
-	TotalEOL           int            `json:"total_eol"`
-	WAFDetected        string         `json:"waf_detected,omitempty"`
-	WAFBypassed        bool           `json:"waf_bypassed,omitempty"`
-	SeverityCounts     SeverityCounts `json:"severity_counts"`
+	TotalXSS         int            `json:"total_xss"`
+	TotalDOMXSS      int            `json:"total_dom_xss"`
+	TotalEnhancedXSS int            `json:"total_enhanced_xss"`
+	TotalATO         int            `json:"total_ato"`
+	TotalAssets      int            `json:"total_assets"`
+	TotalAPIs        int            `json:"total_apis"`
+	TotalPages       int            `json:"total_pages"`
+	TotalExploitable int            `json:"total_exploitable"`
+	TotalOWASP       int            `json:"total_owasp"`
+	TotalEOL         int            `json:"total_eol"`
+	WAFDetected      string         `json:"waf_detected,omitempty"`
+	WAFBypassed      bool           `json:"waf_bypassed,omitempty"`
+	SeverityCounts   SeverityCounts `json:"severity_counts"`
 }
 
 type SeverityCounts struct {
@@ -398,6 +400,7 @@ func parseFlags() ScanConfig {
 	flag.BoolVar(&config.ScanOWASP, "owasp", true, "Enable OWASP Top 25 scanning")
 	flag.BoolVar(&config.ScanPlatform, "platform", true, "Enable platform detection")
 	flag.BoolVar(&config.DeepCrawl, "deep-crawl", true, "Enable deep crawling")
+	flag.BoolVar(&config.AllowPrivateHosts, "allow-private-hosts", false, "Allow localhost and private-network scan targets")
 	flag.BoolVar(&config.Verbose, "verbose", false, "Verbose output")
 
 	// WAF Bypass options
@@ -434,7 +437,19 @@ func parseFlags() ScanConfig {
 		flag.Usage()
 		os.Exit(1)
 	}
-	
+	if config.Target != "" {
+		var err error
+		if config.AllowPrivateHosts {
+			err = validator.ValidateURL(config.Target)
+		} else {
+			err = validator.ValidateTargetURL(config.Target)
+		}
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: invalid target: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
 	// Parse ports
 	if *portsStr != "" {
 		for _, p := range strings.Split(*portsStr, ",") {
@@ -447,7 +462,7 @@ func parseFlags() ScanConfig {
 		// Default ports
 		config.Ports = []int{80, 443, 6379, 27017, 9200, 9300, 8080, 8443}
 	}
-	
+
 	// Set host from target if not provided
 	if config.Host == "" {
 		config.Host = strings.TrimPrefix(config.Target, "https://")
@@ -455,9 +470,9 @@ func parseFlags() ScanConfig {
 		config.Host = strings.Split(config.Host, "/")[0]
 		config.Host = strings.Split(config.Host, ":")[0]
 	}
-	
+
 	config.Timeout = time.Duration(*timeout) * time.Second
-	
+
 	return config
 }
 
@@ -480,19 +495,19 @@ func runCompleteScan(ctx context.Context, config ScanConfig) CompleteReport {
 			Ports: config.Ports,
 		},
 	}
-	
+
 	// Create output directory
 	os.MkdirAll(config.OutputDir, 0755)
-	
+
 	fmt.Printf("[*] Target: %s\n", config.Target)
 	fmt.Printf("[*] Host: %s\n", config.Host)
 	fmt.Printf("[*] Ports: %v\n", config.Ports)
 	fmt.Printf("[*] Output: %s\n\n", config.OutputDir)
-	
+
 	// 1. Content Acquisition & Platform Detection
 	fmt.Println("[1/8] Platform Detection & Content Acquisition...")
 	if config.ScanPlatform {
-		detector := platform.NewDetector(config.Timeout)
+		detector := platform.NewDetector(config.Timeout, platform.WithAllowPrivateHosts(config.AllowPrivateHosts))
 		detection, err := detector.Detect(config.Target)
 		if err == nil {
 			report.Platform = detection
@@ -503,13 +518,14 @@ func runCompleteScan(ctx context.Context, config ScanConfig) CompleteReport {
 			}
 		}
 	}
-	
+
 	// 2. Deep Crawling
 	if config.DeepCrawl {
 		fmt.Println("[2/8] Deep Crawling...")
 		crawlerInstance, err := crawler.NewDeepCrawler(
 			crawler.WithMaxDepth(config.MaxDepth),
 			crawler.WithWorkers(config.Workers),
+			crawler.WithAllowPrivateHosts(config.AllowPrivateHosts),
 		)
 		if err == nil {
 			defer crawlerInstance.Close()
@@ -521,18 +537,21 @@ func runCompleteScan(ctx context.Context, config ScanConfig) CompleteReport {
 			fmt.Printf("    [+] Discovered %d pages\n", len(pages))
 		}
 	}
-	
+
 	// 3. XSS Scanning
 	if config.ScanXSS {
 		fmt.Println("[3/8] XSS Scanning...")
-		xssScanner, err := xss.NewScanner(xss.WithTimeout(config.Timeout))
+		xssScanner, err := xss.NewScanner(
+			xss.WithTimeout(config.Timeout),
+			xss.WithAllowPrivateHosts(config.AllowPrivateHosts),
+		)
 		if err == nil {
 			defer xssScanner.Close()
-			
+
 			// Scan main target
 			findings := xssScanner.ScanTarget(config.Target)
 			report.XSS = findings
-			
+
 			// Scan discovered pages
 			for i, page := range report.Pages {
 				if i >= 10 { // Limit XSS scans to first 10 pages
@@ -541,18 +560,21 @@ func runCompleteScan(ctx context.Context, config ScanConfig) CompleteReport {
 				pageFindings := xssScanner.ScanTarget(page.URL)
 				report.XSS = append(report.XSS, pageFindings...)
 			}
-			
+
 			fmt.Printf("    [+] Found %d XSS vulnerabilities\n", len(report.XSS))
 		}
 	}
-	
+
 	// 3a. DOM XSS Scanning (The Kitchen Sink)
 	if config.ScanXSS {
 		fmt.Println("[3a/8] DOM XSS Analysis (Kitchen Sink)...")
 		domAnalyzer, err := xss.NewDOMXSSAnalyzer()
 		if err == nil {
 			// Get content for main target
-			acquirer, _ := content.NewAcquirer(content.WithTimeout(config.Timeout))
+			acquirer, _ := content.NewAcquirer(
+				content.WithTimeout(config.Timeout),
+				content.WithAllowPrivateHosts(config.AllowPrivateHosts),
+			)
 			if acquirer != nil {
 				defer acquirer.Close()
 				acquired, _ := acquirer.Acquire(config.Target)
@@ -562,28 +584,33 @@ func runCompleteScan(ctx context.Context, config ScanConfig) CompleteReport {
 						ScanDir:  config.Target,
 						Findings: findings,
 					}
-					
+
 					// Also scan other discovered pages
 					for i, page := range report.Pages {
-						if i >= 5 { break } // Limit to first 5 additional pages
+						if i >= 5 {
+							break
+						} // Limit to first 5 additional pages
 						pContent, _ := acquirer.Acquire(page.URL)
 						if pContent != nil {
 							pFindings := domAnalyzer.AnalyzeContent(pContent.HTML, page.URL)
 							report.DOMXSS.Findings = append(report.DOMXSS.Findings, pFindings...)
 						}
 					}
-					
+
 					// Calculate totals for reporting
 					for _, f := range report.DOMXSS.Findings {
 						if f.PatternType == "sink" {
 							switch f.Severity {
-							case "CRITICAL": report.DOMXSS.CriticalFindings++
-							case "HIGH": report.DOMXSS.HighFindings++
-							case "MEDIUM": report.DOMXSS.MediumFindings++
+							case "CRITICAL":
+								report.DOMXSS.CriticalFindings++
+							case "HIGH":
+								report.DOMXSS.HighFindings++
+							case "MEDIUM":
+								report.DOMXSS.MediumFindings++
 							}
 						}
 					}
-					
+
 					fmt.Printf("    [+] Found %d potential DOM XSS patterns\n", len(report.DOMXSS.Findings))
 					fmt.Printf("        - Critical: %d, High: %d\n", report.DOMXSS.CriticalFindings, report.DOMXSS.HighFindings)
 				}
@@ -659,7 +686,10 @@ func runCompleteScan(ctx context.Context, config ScanConfig) CompleteReport {
 	// 4. Asset Discovery
 	if config.ScanAssets {
 		fmt.Println("[4/8] Asset Discovery...")
-		discoverer, err := assets.NewDiscoverer(assets.WithTimeout(config.Timeout))
+		discoverer, err := assets.NewDiscoverer(
+			assets.WithTimeout(config.Timeout),
+			assets.WithAllowPrivateHosts(config.AllowPrivateHosts),
+		)
 		if err == nil {
 			defer discoverer.Close()
 			result, _ := discoverer.Discover(config.Target)
@@ -672,16 +702,16 @@ func runCompleteScan(ctx context.Context, config ScanConfig) CompleteReport {
 			}
 		}
 	}
-	
+
 	// 5. API Extraction
 	if config.ScanAPIs {
 		fmt.Println("[5/8] API Endpoint Extraction...")
-		extractor := apiextract.NewExtractor()
-		
+		extractor := apiextract.NewExtractor(apiextract.WithAllowPrivateHosts(config.AllowPrivateHosts))
+
 		// Extract from main target
 		result, _ := extractor.Extract(config.Target, nil)
 		report.APIs = result
-		
+
 		// Extract from discovered pages
 		for _, page := range report.Pages {
 			if page.ContentType == "" || strings.Contains(page.ContentType, "html") {
@@ -692,7 +722,7 @@ func runCompleteScan(ctx context.Context, config ScanConfig) CompleteReport {
 				}
 			}
 		}
-		
+
 		if report.APIs != nil {
 			fmt.Printf("    [+] Found %d API endpoints\n", report.APIs.TotalCount)
 			fmt.Printf("        - REST: %d\n", len(report.APIs.REST))
@@ -700,7 +730,7 @@ func runCompleteScan(ctx context.Context, config ScanConfig) CompleteReport {
 			fmt.Printf("        - WebSocket: %d\n", len(report.APIs.WebSocket))
 		}
 	}
-	
+
 	// 6. Exploitable Software Scanning
 	if config.ScanExploitable {
 		fmt.Println("[6/8] Exploitable Software Scanning...")
@@ -708,9 +738,9 @@ func runCompleteScan(ctx context.Context, config ScanConfig) CompleteReport {
 			exploitable.WithTimeout(config.Timeout),
 			exploitable.WithWorkers(config.Workers),
 		)
-		
+
 		findings := scanner.ScanTarget(config.Host, config.Ports)
-		
+
 		for _, f := range findings {
 			switch finding := f.(type) {
 			case *exploitable.RedisFinding:
@@ -763,25 +793,28 @@ func runCompleteScan(ctx context.Context, config ScanConfig) CompleteReport {
 				})
 			}
 		}
-		
+
 		fmt.Printf("    [+] Found %d exploitable services\n", len(report.Exploitable))
 	}
-	
+
 	// 7. OWASP Top 25 Scanning
 	if config.ScanOWASP {
 		fmt.Println("[7/8] OWASP Top 25 Scanning...")
-		
+
 		// Get content
-		acquirer, _ := content.NewAcquirer(content.WithTimeout(config.Timeout))
+		acquirer, _ := content.NewAcquirer(
+			content.WithTimeout(config.Timeout),
+			content.WithAllowPrivateHosts(config.AllowPrivateHosts),
+		)
 		if acquirer != nil {
 			defer acquirer.Close()
 			acquired, _ := acquirer.Acquire(config.Target)
-			
+
 			if acquired != nil {
 				scanner := owasp25.NewScanner("")
 				findings := scanner.ScanString(acquired.HTML, config.Target)
 				report.OWASP = findings
-				
+
 				// Scan discovered pages
 				for _, page := range report.Pages {
 					if page.ContentType == "" || strings.Contains(page.ContentType, "html") {
@@ -792,36 +825,41 @@ func runCompleteScan(ctx context.Context, config ScanConfig) CompleteReport {
 						}
 					}
 				}
-				
+
 				fmt.Printf("    [+] Found %d OWASP violations\n", len(report.OWASP))
 			}
 		}
 	}
-	
+
 	// 8. Calculate Summary
 	fmt.Println("[8/8] Generating Summary...")
 	report.Summary = calculateSummary(report)
-	
+
 	printSummary(report.Summary)
-	
+
 	return report
 }
 
 func calculateSummary(report CompleteReport) Summary {
 	summary := Summary{}
-	
+
 	// Count XSS (Reflected)
 	summary.TotalXSS = len(report.XSS)
 	for _, f := range report.XSS {
 		switch f.Severity {
-		case "CRITICAL": summary.SeverityCounts.Critical++
-		case "HIGH":     summary.SeverityCounts.High++
-		case "MEDIUM":   summary.SeverityCounts.Medium++
-		case "LOW":      summary.SeverityCounts.Low++
-		default:         summary.SeverityCounts.Info++
+		case "CRITICAL":
+			summary.SeverityCounts.Critical++
+		case "HIGH":
+			summary.SeverityCounts.High++
+		case "MEDIUM":
+			summary.SeverityCounts.Medium++
+		case "LOW":
+			summary.SeverityCounts.Low++
+		default:
+			summary.SeverityCounts.Info++
 		}
 	}
-	
+
 	// Count DOM XSS
 	if report.DOMXSS != nil {
 		summary.TotalDOMXSS = len(report.DOMXSS.Findings)
@@ -834,15 +872,15 @@ func calculateSummary(report CompleteReport) Summary {
 	if report.Assets != nil {
 		summary.TotalAssets = report.Assets.TotalCount
 	}
-	
+
 	// Count APIs
 	if report.APIs != nil {
 		summary.TotalAPIs = report.APIs.TotalCount
 	}
-	
+
 	// Count Pages
 	summary.TotalPages = len(report.Pages)
-	
+
 	// Count Exploitable
 	summary.TotalExploitable = len(report.Exploitable)
 	for _, f := range report.Exploitable {
@@ -859,7 +897,7 @@ func calculateSummary(report CompleteReport) Summary {
 			summary.SeverityCounts.Info++
 		}
 	}
-	
+
 	// Count OWASP
 	summary.TotalOWASP = len(report.OWASP)
 	for _, f := range report.OWASP {
@@ -876,7 +914,7 @@ func calculateSummary(report CompleteReport) Summary {
 			summary.SeverityCounts.Info++
 		}
 	}
-	
+
 	// Count EOL
 	summary.TotalEOL = len(report.EOL)
 
@@ -1015,7 +1053,7 @@ func outputResults(report CompleteReport, config ScanConfig) error {
 			config.OutputDir = "."
 		}
 	}
-	
+
 	// Final check - ensure we can write to whatever OutputDir is now
 	testFile := filepath.Join(config.OutputDir, ".write_test")
 	if err := os.WriteFile(testFile, []byte("test"), 0644); err != nil {
@@ -1024,11 +1062,11 @@ func outputResults(report CompleteReport, config ScanConfig) error {
 	} else {
 		os.Remove(testFile)
 	}
-	
+
 	// Generate filename
 	timestamp := time.Now().Format("20060102-150405")
 	filename := fmt.Sprintf("aegis-scan-%s-%s", strings.Replace(config.Host, ".", "-", -1), timestamp)
-	
+
 	// JSON output
 	jsonPath := fmt.Sprintf("%s/%s.json", config.OutputDir, filename)
 	jsonData, err := json.MarshalIndent(report, "", "  ")
@@ -1039,7 +1077,7 @@ func outputResults(report CompleteReport, config ScanConfig) error {
 		return err
 	}
 	fmt.Printf("\n[+] JSON Report: %s\n", jsonPath)
-	
+
 	// HTML Report
 	htmlPath := fmt.Sprintf("%s/%s.html", config.OutputDir, filename)
 	htmlReport := generateHTMLReport(report)
@@ -1047,7 +1085,7 @@ func outputResults(report CompleteReport, config ScanConfig) error {
 		return err
 	}
 	fmt.Printf("[+] HTML Report: %s\n", htmlPath)
-	
+
 	// Markdown Summary
 	mdPath := fmt.Sprintf("%s/%s.md", config.OutputDir, filename)
 	mdReport := generateMarkdownReport(report)
@@ -1055,7 +1093,7 @@ func outputResults(report CompleteReport, config ScanConfig) error {
 		return err
 	}
 	fmt.Printf("[+] Markdown Report: %s\n", mdPath)
-	
+
 	return nil
 }
 
@@ -1172,7 +1210,7 @@ func generateHTMLReport(report CompleteReport) string {
 		report.Summary.SeverityCounts.Low,
 		report.ScanInfo.ScannerVersion,
 	)
-	
+
 	return html
 }
 
@@ -1226,7 +1264,7 @@ func generateMarkdownReport(report CompleteReport) string {
 		report.Summary.SeverityCounts.Low,
 		report.Summary.SeverityCounts.Info,
 	)
-	
+
 	if report.Platform != nil {
 		md += "### Detected Frameworks\n\n"
 		for _, fw := range report.Platform.Frameworks {
@@ -1237,18 +1275,18 @@ func generateMarkdownReport(report CompleteReport) string {
 		}
 		md += "\n"
 	}
-	
+
 	if len(report.EOL) > 0 {
 		md += "### End-of-Life Frameworks\n\n"
 		for _, eol := range report.EOL {
 			if eol.IsEOL {
-				md += fmt.Sprintf("- ⚠️ **%s %s** - EOL since %s\n", 
+				md += fmt.Sprintf("- ⚠️ **%s %s** - EOL since %s\n",
 					eol.Framework, eol.Version, eol.EOLDate.Format("2006-01-02"))
 			}
 		}
 		md += "\n"
 	}
-	
+
 	if len(report.Exploitable) > 0 {
 		md += "## Exploitable Services\n\n"
 		for _, ex := range report.Exploitable {
@@ -1265,9 +1303,9 @@ func generateMarkdownReport(report CompleteReport) string {
 			md += fmt.Sprintf("- **Summary:** %s\n\n", ex.Summary)
 		}
 	}
-	
+
 	md += "\n---\n\n"
 	md += fmt.Sprintf("*Report generated by Aegis Security Scanner v%s*\n", report.ScanInfo.ScannerVersion)
-	
+
 	return md
 }

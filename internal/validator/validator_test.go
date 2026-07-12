@@ -1,6 +1,9 @@
 package validator
 
-import "testing"
+import (
+	"net/http"
+	"testing"
+)
 
 func TestValidateURL(t *testing.T) {
 	tests := []struct {
@@ -46,6 +49,37 @@ func TestValidateTargetURL(t *testing.T) {
 		if (err != nil) != tt.wantErr {
 			t.Errorf("ValidateTargetURL(%s) error = %v, wantErr %v", tt.url, err, tt.wantErr)
 		}
+	}
+}
+
+func TestValidateTargetHost(t *testing.T) {
+	tests := []struct {
+		host    string
+		wantErr bool
+	}{
+		{"example.com", false},
+		{"localhost", true},
+		{"app.localhost", true},
+		{"127.0.0.1", true},
+		{"::1", true},
+	}
+
+	for _, tt := range tests {
+		err := ValidateTargetHost(tt.host)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("ValidateTargetHost(%s) error = %v, wantErr %v", tt.host, err, tt.wantErr)
+		}
+	}
+}
+
+func TestRedirectPolicyRejectsPrivateRedirectTarget(t *testing.T) {
+	req, err := http.NewRequest(http.MethodGet, "http://127.0.0.1/admin", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+
+	if err := RedirectPolicy(false)(req, nil); err == nil {
+		t.Fatal("expected redirect policy to reject private target")
 	}
 }
 

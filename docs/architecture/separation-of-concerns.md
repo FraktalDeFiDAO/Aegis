@@ -1,126 +1,47 @@
-# Separation of Concerns in Bug Hunter
+# Separation of Concerns
 
-## Overview
+## Principle
 
-This document outlines the separation of concerns implemented in the Bug Hunter platform to ensure secure and isolated analysis of different code repositories.
+Aegis separates acquisition, validation, analysis, orchestration, and reporting so
+that each subsystem can be tested independently and hardened without changing the
+whole pipeline.
 
-## Isolation Principles
+## Boundaries
 
-### 1. Physical Isolation
-- Each repository is analyzed in its own isolated environment
-- Separate directories for each analysis target
-- Temporary files are cleaned up after analysis
-- No cross-contamination between different codebases
+### CLI (`cmd/aegis`)
 
-### 2. Process Isolation
-- Each analysis runs in separate processes
-- Resource limits applied per analysis
-- Network access controlled and monitored
-- Memory and CPU usage restricted
+Responsible for command parsing, flags, and invoking internal packages. It should
+not contain detector logic, crawler logic, or persistence policy beyond wiring.
 
-### 3. Data Isolation
-- Analysis results are kept separate per repository
-- No shared state between different analyses
-- Secure handling of sensitive data
-- Proper cleanup of temporary data
+### Validation (`internal/validator`, `internal/scope`)
 
-## Isolation Mechanisms
+Responsible for URL, host, path, and scope policy. Any component that accepts a
+user-controlled URL must call the validator before network access or filesystem
+write.
 
-### 1. Directory Structure
-```
-/workspace/analysis/
-├── repo1/
-│   ├── original/          # Original cloned repository
-│   ├── extracted/         # Code extracted for analysis
-│   ├── analyzed/          # Analysis results
-│   ├── reports/           # Generated reports
-│   ├── temp/             # Temporary files
-│   ├── analysis_id.txt   # Unique analysis identifier
-│   └── env.conf         # Environment configuration
-├── repo2/
-│   └── ...
-└── ...
-```
+### Acquisition (`internal/browser`, `internal/crawler`, `internal/content`, `internal/scrape`)
 
-### 2. Analysis Pipeline
-Each repository goes through the following isolated pipeline:
+Responsible for fetching/rendering pages and persisting crawl artifacts. It should
+not decide vulnerability severity. It produces normalized artifacts for scanners.
 
-1. **Environment Creation**: A unique analysis environment is created for each repository
-2. **Repository Cloning**: The repository is cloned into its isolated space
-3. **Code Extraction**: Source code is extracted while excluding build artifacts
-4. **Analysis Execution**: Analysis tools run in the isolated environment
-5. **Report Generation**: Results are compiled into repository-specific reports
-6. **Cleanup**: Temporary files are removed
+### Analysis (`internal/scanner`, `internal/owasp25`, `internal/xss`, `internal/waf`, `internal/platform`)
 
-### 3. Technology-Specific Analysis
-Different technologies are analyzed using appropriate tools:
+Responsible for findings. Every detector must satisfy the PRD/SPEC false-positive
+contract: positive, negative, and edge-case tests.
 
-- **JavaScript/Node.js**: npm audit, Semgrep
-- **Go**: gosec
-- **Python**: bandit
-- **Rust**: cargo clippy
-- **Java**: SpotBugs, PMD
-- **Generic**: Semgrep for pattern matching
+### Orchestration (`internal/runner`, `internal/workflow`, `internal/api`)
 
-## Security Measures
+Responsible for running workflows and API jobs. It must be bounded, authenticated
+where externally reachable, and deterministic in tests.
 
-### 1. Container Isolation
-- Each analysis runs in a separate container
-- Rootless containers for additional security
-- Network access restricted to necessary resources
-- File system access limited to analysis directories
+### Persistence (`internal/session`, crawler DB, filesystem dumps)
 
-### 2. Resource Limits
-- CPU and memory limits per analysis
-- Time limits to prevent infinite loops
-- File size limits to prevent resource exhaustion
-- Process limits to prevent fork bombs
+Responsible for encrypted sessions, SQLite crawl state, and local artifacts. Writes
+must be bounded and safe: owner-only permissions for secrets, quota enforcement for
+API dumps, and atomic writes for session files once SPEC backlog B-5 is implemented.
 
-### 3. Data Protection
-- Sensitive data is not stored persistently
-- Analysis results are encrypted at rest
-- Access logs are maintained for audit purposes
-- Temporary data is securely deleted
+## Out of scope
 
-## Automation Scripts
-
-### 1. `separate.sh`
-Manages the isolation of repositories:
-- Creates isolated environments
-- Clones repositories safely
-- Extracts code for analysis
-- Runs technology-specific analysis
-- Generates reports
-- Cleans up temporary files
-
-### 2. `orchestrate.sh`
-Coordinates the overall workflow while maintaining isolation:
-- Initiates analysis workflows
-- Ensures proper isolation between targets
-- Manages resource allocation
-- Monitors analysis progress
-
-## Best Practices
-
-### 1. For Analysts
-- Always use the isolation scripts for analysis
-- Never mix analysis results between repositories
-- Regularly update analysis tools
-- Review and validate analysis results
-
-### 2. For Administrators
-- Monitor resource usage
-- Review access logs regularly
-- Update security configurations
-- Maintain backup of important findings
-
-## Verification
-
-To verify that isolation is working properly:
-
-1. Check that each repository has its own directory under `/workspace/analysis/`
-2. Verify that analysis results are stored separately
-3. Confirm that temporary files are cleaned up after analysis
-4. Monitor resource usage to ensure limits are enforced
-
-This separation of concerns ensures that the analysis of one repository does not affect another, maintaining the integrity and security of the bug hunting process.
+This document does not describe Web3 analyzers, Android analyzers, desktop binary
+analysis, Python/Rust/Java analyzers, or a coordinator service. Those were stale
+pre-v3 concepts and are not part of current Aegis.
