@@ -4,9 +4,12 @@ package response
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"time"
 
 	"github.com/coppertone/bug-hunter/app/aegis/internal/logger"
 )
@@ -24,6 +27,7 @@ type Action struct {
 type ResponseHandler struct {
 	webhookURL string
 	log        *logger.Logger
+	httpClient *http.Client
 }
 
 // NewResponseHandler initializes a handler with a target webhook URL.
@@ -31,6 +35,12 @@ func NewResponseHandler(webhookURL string) *ResponseHandler {
 	return &ResponseHandler{
 		webhookURL: webhookURL,
 		log:        logger.New(),
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{},
+			},
+		},
 	}
 }
 
@@ -43,12 +53,20 @@ func (h *ResponseHandler) Trigger(action Action) error {
 		return nil
 	}
 
-	data, _ := json.Marshal(action)
-	resp, err := http.Post(h.webhookURL, "application/json", bytes.NewBuffer(data))
+	data, err := json.Marshal(action)
+	if err != nil {
+		return fmt.Errorf("failed to marshal action: %w", err)
+	}
+	resp, err := h.httpClient.Post(h.webhookURL, "application/json", bytes.NewBuffer(data))
 	if err != nil {
 		return fmt.Errorf("failed to trigger webhook: %w", err)
 	}
 	defer resp.Body.Close()
+	// Drain body for connection reuse
+	io.Copy(io.Discard, resp.Body)
 
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("webhook returned status %d", resp.StatusCode)
+	}
 	return nil
 }
