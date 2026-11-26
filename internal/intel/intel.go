@@ -5,6 +5,7 @@ package intel
 import (
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -44,13 +45,16 @@ func NewIntelManager() *IntelManager {
 }
 
 // FetchUpdates synchronizes the local cache with the latest data from
-// all registered threat feeds.
+// all registered threat feeds. It returns an error if any feed fails to fetch
+// or decode, while still attempting remaining feeds and caching successful ones.
 func (m *IntelManager) FetchUpdates() error {
+	var errs []error
 	for _, feed := range m.feeds {
 		m.log.Info("Fetching threat intel", "feed", feed.Name)
 		resp, err := m.httpClient.Get(feed.URL)
 		if err != nil {
 			m.log.Error("Failed to fetch feed", "feed", feed.Name, "error", err)
+			errs = append(errs, fmt.Errorf("fetch %s: %w", feed.Name, err))
 			continue
 		}
 
@@ -60,9 +64,13 @@ func (m *IntelManager) FetchUpdates() error {
 		resp.Body.Close()
 		if decodeErr != nil {
 			m.log.Error("Failed to decode feed", "feed", feed.Name, "error", decodeErr)
+			errs = append(errs, fmt.Errorf("decode %s: %w", feed.Name, decodeErr))
 			continue
 		}
 		m.cache.Store(feed.Name, data)
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("intel update errors: %d feed(s) failed", len(errs))
 	}
 	return nil
 }

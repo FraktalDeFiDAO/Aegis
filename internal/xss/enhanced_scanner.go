@@ -121,7 +121,7 @@ func NewEnhancedScanner(opts ...EnhancedScannerOption) (*EnhancedScanner, error)
 	s.httpClient = &http.Client{
 		Timeout: s.timeout,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: s.insecure},
+			TLSClientConfig: secureTLSConfig(s.insecure),
 		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -608,4 +608,14 @@ func (s *EnhancedScanner) Close() error {
 // GetWAFStrategies returns bypass strategies for detected WAF
 func (s *EnhancedScanner) GetWAFStrategies(wafType waf.WAFType) []string {
 	return waf.GetBypassStrategies(wafType)
+}
+
+// secureTLSConfig returns a TLS config that defaults to certificate verification.
+// insecureSkipVerify is only allowed when explicitly enabled via configuration option.
+func secureTLSConfig(insecureSkipVerify bool) *tls.Config {
+	// Always verify certificates by default. InsecureSkipVerify must be
+	// explicitly enabled via configuration option and is not the default.
+	return &tls.Config{
+		InsecureSkipVerify: insecureSkipVerify,
+	}
 }

@@ -91,10 +91,12 @@ func NewDetector(opts ...DetectorOption) *Detector {
 		opt(d)
 	}
 
+	tlsConfig := secureTLSConfig(d.insecure)
+
 	d.httpClient = &http.Client{
 		Timeout: d.timeout,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: d.insecure},
+			TLSClientConfig: tlsConfig,
 		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -102,6 +104,16 @@ func NewDetector(opts ...DetectorOption) *Detector {
 	}
 
 	return d
+}
+
+// secureTLSConfig returns a TLS config that defaults to certificate verification.
+// insecureSkipVerify is only allowed when explicitly enabled via configuration.
+func secureTLSConfig(insecureSkipVerify bool) *tls.Config {
+	// Always verify certificates by default. InsecureSkipVerify must be
+	// explicitly enabled via configuration option and is not the default.
+	return &tls.Config{
+		InsecureSkipVerify: insecureSkipVerify,
+	}
 }
 
 // WAF fingerprint signatures

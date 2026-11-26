@@ -78,8 +78,16 @@ func (s *Server) Start(addr string) error {
 	mux.Handle("/crawl", s.rateLimitMiddleware(s.authMiddleware(http.HandlerFunc(s.handleCrawl))))
 	mux.HandleFunc("/health", s.handleHealth)
 
+	srv := &http.Server{
+		Addr:         addr,
+		Handler:      mux,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+
 	s.logger.Info("Starting API server", "addr", addr)
-	return http.ListenAndServe(addr, mux)
+	return srv.ListenAndServe()
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
