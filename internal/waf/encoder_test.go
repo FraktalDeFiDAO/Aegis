@@ -16,7 +16,7 @@ func TestEncoder_URLEncode(t *testing.T) {
 	}
 
 	if !strings.Contains(result, "%3C") || !strings.Contains(result, "%3E") {
-		t.Error("URL encoding should produce %3C and %3E")
+		t.Error("URL encoding should produce", "%3C", "and", "%3E")
 	}
 }
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Google Play App Content"
+  short_description: "Complete evidence-based Play Console declarations"
+  default_prompt: "Use $google-play-app-content to complete and verify my app's App Content declarations through Aegis."

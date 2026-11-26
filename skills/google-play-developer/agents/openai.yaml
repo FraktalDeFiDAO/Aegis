@@ -1,0 +1,4 @@
+interface:
+  display_name: "Google Play Developer"
+  short_description: "Manage Play Console onboarding, tests, and releases"
+  default_prompt: "Use $google-play-developer to prepare and verify my Google Play app release."

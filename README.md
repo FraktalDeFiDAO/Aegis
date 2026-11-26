@@ -100,3 +100,14 @@ Aegis is designed for authorized testing only. It blocks private/loopback target
 default unless explicitly configured, stores sessions encrypted with AES-256-GCM, and
 requires API authentication unless `AEGIS_API_ALLOW_UNAUTH=true` is deliberately set
 for development.
+
+## Live browser connector
+
+See [extension setup](extension/README.md) for Chrome/Brave/Chromium and Firefox,
+[connector compatibility](docs/CONNECTOR_COMPATIBILITY.md), and the bundled
+[model skills](skills/aegis-browser/SKILL.md). Package with
+`bash scripts/package-extension.sh`; Chrome loads `dist/extension/chrome`.
+
+The current 1.1.2 package is a development candidate. Follow the
+[Chrome Web Store readiness checklist](docs/chrome-web-store/README.md) before
+public distribution and the [Git workflow](docs/workflow/git.md) for changes.

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Aegis Browser"
+  short_description: "Control the live browser through the Aegis bridge"
+  default_prompt: "Use $aegis-browser to work in my current browser and verify the result."

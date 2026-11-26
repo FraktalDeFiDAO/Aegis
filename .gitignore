@@ -27,3 +27,12 @@ output/
 # Test coverage
 coverage.out
 coverage.html
+
+# Generated distributions, Python caches, and local tool dependencies
+/dist/
+__pycache__/
+*.py[cod]
+node_modules/
+
+# Generated graph can include local scan-output metadata
+/graphify-out/

@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/coppertone/bug-hunter/app/aegis/internal/api"
+	"github.com/coppertone/bug-hunter/app/aegis/internal/connector"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/crawler"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/intel"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/logger"
@@ -21,8 +22,10 @@ import (
 )
 
 var (
-	log        = logger.New()
-	sessionKey []byte
+	log           = logger.New()
+	sessionKey    []byte
+	connectorMode bool
+	bridgeURL     string
 )
 
 func main() {
@@ -39,11 +42,13 @@ func main() {
 	}
 
 	root.PersistentFlags().BytesHexVar(&sessionKey, "key", nil, "32-byte hex-encoded encryption key for session file")
+	root.PersistentFlags().BoolVar(&connectorMode, "connector", false, "Use user's live browser via Aegis Extension (Chrome/Firefox/Brave)")
+	root.PersistentFlags().StringVar(&bridgeURL, "bridge-url", "", "WebSocket URL of the bridge server (ws://127.0.0.1:<port>/ws). Auto-started if empty.")
 	root.PersistentFlags().BoolVar(&scrapeFlag, "scrape-scope", false, "Scrape all in-scope targets (requires <projectDir> <scopeConfig>)")
 	root.PersistentFlags().StringVar(&scrapeConfigPath, "scrape-config", "", "Scrape configuration file (YAML)")
 	bindScrapeFlags(root.PersistentFlags(), &scrapeOpts)
 
-	root.AddCommand(authCmd(), crawlCmd(), scanCmd(), apiCmd(), benchCmd(), intelCmd(), reconCmd(), scrapeScopeCmd(), exploitCmd(), screenshotCmd(), rendercheckCmd())
+	root.AddCommand(authCmd(), crawlCmd(), scanCmd(), apiCmd(), benchCmd(), intelCmd(), reconCmd(), scrapeScopeCmd(), exploitCmd(), screenshotCmd(), rendercheckCmd(), connectCmd(), workflowCmd(), scheduleCmd())
 
 	if err := root.Execute(); err != nil {
 		log.Error("Execution failed", "error", err)
@@ -191,6 +196,47 @@ func flagChanged(cmd *cobra.Command, name string) bool {
 	return cmd.InheritedFlags().Changed(name)
 }
 
+// getBrowserOrConnector returns either a rod.Browser or a connector.Connector
+// depending on the --connector flag. Returns (*rod.Browser, *connector.Connector, cleanup).
+func getBrowserOrConnector(headless bool) (*rod.Browser, *connector.Connector, func()) {
+	if !connectorMode {
+		return nil, nil, nil
+	}
+
+	var c *connector.Connector
+	var err error
+	cleanup := func() {
+		if c != nil {
+			c.Close()
+		}
+	}
+
+	if bridgeURL != "" {
+		c, err = connector.Connect(bridgeURL)
+	} else {
+		// Reuse a native-host/manual bridge before starting another listener.
+		c, err = connector.Connect(discoveredBridgeURL())
+		if err != nil {
+			// Auto-start bridge server and wait for extension
+			var addr string
+			c, addr, err = connector.ConnectWithBridge("127.0.0.1")
+			if err == nil {
+				fmt.Printf("[aegis] Bridge server started at %s\n", addr)
+				fmt.Println("[aegis] Install the Aegis Browser Extension and connect to this bridge.")
+				fmt.Println("[aegis] Waiting for extension connection...")
+			}
+		}
+	}
+
+	if err != nil {
+		log.Error("Failed to connect via extension, falling back to direct browser", "error", err)
+		return nil, nil, nil
+	}
+
+	fmt.Println("[aegis] Connected to user's browser via extension")
+	return nil, c, cleanup
+}
+
 func apiCmd() *cobra.Command {
 	var addr string
 	cmd := &cobra.Command{
@@ -229,19 +275,43 @@ func authCmd() *cobra.Command {
 		Use:   "auth",
 		Short: "Capture and persist the authenticated browser session.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			browser := rod.New().MustConnect()
-			defer browser.MustClose()
-
 			if targetURL == "" {
 				return fmt.Errorf("--target-url is required for authentication")
 			}
+
+			mgr := session.NewSessionManager(sessionPath, sessionKey)
+
+			// Connector mode: capture from user's live browser
+			if connectorMode {
+				_, conn, cleanup := getBrowserOrConnector(true)
+				defer cleanup()
+
+				if conn == nil {
+					return fmt.Errorf("connector mode failed to initialize")
+				}
+
+				fmt.Printf("Capturing session from your live browser for %s\n", targetURL)
+				fmt.Println("Make sure you are logged in to the target site in your browser.")
+				fmt.Println("Press Enter to capture the session...")
+				fmt.Scanln()
+
+				if err := conn.ExportSession(mgr); err != nil {
+					return fmt.Errorf("failed to capture session from browser: %w", err)
+				}
+
+				log.Info("Session captured from live browser", "path", mgr.Path())
+				return nil
+			}
+
+			// Default mode: launch Chromium
+			browser := rod.New().MustConnect()
+			defer browser.MustClose()
 
 			page := browser.MustPage(targetURL)
 			fmt.Printf("Navigated to %s. Please authenticate in the browser.\n", targetURL)
 			fmt.Println("After authenticating, press Enter to save the session...")
 			fmt.Scanln()
 
-			mgr := session.NewSessionManager(sessionPath, sessionKey)
 			if err := mgr.Save(page); err != nil {
 				return fmt.Errorf("failed to save session: %w", err)
 			}
@@ -264,6 +334,8 @@ func crawlCmd() *cobra.Command {
 	var renderBorderHigh int
 	var renderTextDeltaMin int
 	var renderMaxBytes int64
+	var captureConsole, captureNetwork, capturePageState bool
+	var captureDir string
 
 	cmd := &cobra.Command{
 		Use:   "crawl",
@@ -296,8 +368,28 @@ func crawlCmd() *cobra.Command {
 			if cmd.Flags().Changed("render-max-bytes") {
 				config.RenderMaxBytes = renderMaxBytes
 			}
+			if cmd.Flags().Changed("capture-console") {
+				config.CaptureConsole = captureConsole
+			}
+			if cmd.Flags().Changed("capture-network") {
+				config.CaptureNetwork = captureNetwork
+			}
+			if cmd.Flags().Changed("capture-page-state") {
+				config.CapturePageState = capturePageState
+			}
+			if cmd.Flags().Changed("capture-dir") {
+				config.CaptureDir = captureDir
+			}
 			if len(sessionKey) > 0 {
 				config.SessionKey = sessionKey
+			}
+
+			// Connector mode: pass bridge URL to crawler
+			if connectorMode {
+				if bridgeURL != "" {
+					config.BridgeURL = bridgeURL
+				}
+				config.ConnectorMode = true
 			}
 
 			c := crawler.NewCrawler(config, sessionPath)
@@ -319,6 +411,10 @@ func crawlCmd() *cobra.Command {
 	cmd.Flags().IntVar(&renderBorderHigh, "render-border-high", 8, "Rendercheck borderline high score")
 	cmd.Flags().IntVar(&renderTextDeltaMin, "render-text-delta-min", 350, "Rendercheck visible text delta threshold")
 	cmd.Flags().Int64Var(&renderMaxBytes, "render-max-bytes", 2<<20, "Rendercheck/static HTML max bytes")
+	cmd.Flags().BoolVar(&captureConsole, "capture-console", false, "Capture console/page errors via connector (best-effort)")
+	cmd.Flags().BoolVar(&captureNetwork, "capture-network", false, "Capture network metadata via connector (best-effort)")
+	cmd.Flags().BoolVar(&capturePageState, "capture-page-state", false, "Capture bounded page-state snapshots via connector (best-effort)")
+	cmd.Flags().StringVar(&captureDir, "capture-dir", "", "Directory for capture artifacts (defaults to <dump>/captures)")
 	return cmd
 }
 
