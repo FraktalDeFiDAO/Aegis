@@ -34,6 +34,7 @@ type Connector struct {
 	wsURL   string
 	wsConn  *websocket.Conn
 	logger  *slog.Logger
+	token   string
 	writeMu sync.Mutex
 
 	mu       sync.RWMutex
@@ -50,6 +51,7 @@ type Connector struct {
 	lastSeq   int64
 	helloDone chan struct{}
 	helloOnce sync.Once
+	helloErr  error
 
 	// Session import/export
 	sessionMgr *session.SessionManager
@@ -59,6 +61,7 @@ type Connector struct {
 type Config struct {
 	BridgeURL string // ws://127.0.0.1:<port>/ws
 	Logger    *slog.Logger
+	Token     string
 }
 
 // Option configures the connector.
@@ -67,6 +70,11 @@ type Option func(*Config)
 // WithLogger sets a custom logger.
 func WithLogger(l *slog.Logger) Option {
 	return func(c *Config) { c.Logger = l }
+}
+
+// WithToken sets the shared credential used during the hello handshake.
+func WithToken(token string) Option {
+	return func(c *Config) { c.Token = token }
 }
 
 // Connect creates a Connector and connects to the bridge server.
@@ -88,6 +96,7 @@ func Connect(wsURL string, opts ...Option) (*Connector, error) {
 		wsURL:     wsURL,
 		wsConn:    conn,
 		logger:    cfg.Logger,
+		token:     cfg.Token,
 		pages:     make(map[int]*Page),
 		pending:   make(map[string]*pendingCall),
 		helloDone: make(chan struct{}),
@@ -95,8 +104,8 @@ func Connect(wsURL string, opts ...Option) (*Connector, error) {
 
 	go c.readLoop()
 	if err := c.sendHello(0); err != nil {
-		c.logger.Warn("hello handshake failed (continuing for compatibility)", "error", err)
-		c.helloOnce.Do(func() { close(c.helloDone) })
+		_ = c.Close()
+		return nil, fmt.Errorf("bridge authentication: %w", err)
 	}
 	cfg.Logger.Info("connected to bridge", "url", wsURL)
 	return c, nil
@@ -114,6 +123,7 @@ func ConnectWithBridge(addr string, opts ...Option) (*Connector, string, error) 
 		return nil, "", fmt.Errorf("start bridge: %w", err)
 	}
 	wsURL := fmt.Sprintf("ws://%s/ws?client=aegis", bridgeAddr)
+	opts = append(opts, WithToken(srv.Token()))
 	conn, err := Connect(wsURL, opts...)
 	if err != nil {
 		return nil, "", fmt.Errorf("connect to bridge: %w", err)
@@ -173,6 +183,14 @@ func (c *Connector) readLoop() {
 		case *bridge.Ping:
 			_ = c.writeJSON(bridge.Pong{ID: m.ID, Type: bridge.MsgPong, Timestamp: time.Now().UnixMilli()})
 		case *bridge.HelloAck:
+			c.mu.Lock()
+			if !m.OK {
+				c.helloErr = errors.New("bridge rejected authentication")
+				if m.Error != nil && m.Error.Message != "" {
+					c.helloErr = errors.New(m.Error.Message)
+				}
+			}
+			c.mu.Unlock()
 			c.helloOnce.Do(func() { close(c.helloDone) })
 		case *bridge.ErrorMessage:
 			id := bridge.CorrelationID(m.ID, m.RequestID)
@@ -202,13 +220,16 @@ func (c *Connector) writeJSON(v interface{}) error {
 }
 
 func (c *Connector) sendHello(resumeFrom int64) error {
-	hello := bridge.Hello{Type: bridge.MsgHello, Client: "aegis", Version: bridge.ProtocolVersion, ResumeFrom: resumeFrom, Timestamp: time.Now().UnixMilli(), Capabilities: &bridge.Capabilities{Commands: []string{}}}
+	hello := bridge.Hello{Type: bridge.MsgHello, Client: "aegis", Version: bridge.ProtocolVersion, ResumeFrom: resumeFrom, Token: c.token, Timestamp: time.Now().UnixMilli(), Capabilities: &bridge.Capabilities{Commands: []string{}}}
 	if err := c.writeJSON(hello); err != nil {
 		return err
 	}
 	select {
 	case <-c.helloDone:
-		return nil
+		c.mu.RLock()
+		err := c.helloErr
+		c.mu.RUnlock()
+		return err
 	case <-time.After(2 * time.Second):
 		return fmt.Errorf("hello ack timeout")
 	}
@@ -320,9 +341,14 @@ func (c *Connector) reconnectLoop() {
 		c.wsConn = conn
 		c.helloDone = make(chan struct{})
 		c.helloOnce = sync.Once{}
+		c.helloErr = nil
 		c.mu.Unlock()
 		go c.readLoop()
-		_ = c.sendHello(atomic.LoadInt64(&c.lastSeq))
+		if err := c.sendHello(atomic.LoadInt64(&c.lastSeq)); err != nil {
+			c.logger.Error("reconnect authentication failed", "error", err)
+			_ = c.Close()
+			return
+		}
 		c.logger.Info("reconnected to bridge")
 		return
 	}

@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const path = require('node:path');
 
 function harness({failure = false, synchronousFailure = false} = {}) {
-  const messages = [], disconnects = [], sockets = [];
+  const messages = [], disconnects = [], sockets = [], sent = [];
   let launches = 0;
   const port = {
     onMessage: {addListener: fn => messages.push(fn)},
@@ -18,17 +18,20 @@ function harness({failure = false, synchronousFailure = false} = {}) {
     connectNative: name => { assert.equal(name,'com.aegis.bridge'); launches++; if(synchronousFailure) throw new Error('not installed'); return port; },
     lastError: failure ? {message:'not installed'} : undefined,
   };
-  const context = vm.createContext({chrome:{runtime}, setTimeout,clearTimeout,log:()=>{},scheduleReconnect:()=>{},notifyPopup:()=>{},sendHello:()=>{},flushEventQueue:()=>{},
+  const context = vm.createContext({chrome:{runtime}, setTimeout,clearTimeout,log:()=>{},scheduleReconnect:()=>{},notifyPopup:()=>{},flushEventQueue:()=>{},detectCapabilities:()=>({}),
     WebSocket: class {
       static OPEN=1; static CONNECTING=0;
       constructor(url){this.url=url;this.readyState=0;sockets.push(this);}
+      send(data){sent.push(JSON.parse(data));}
     },
   });
   const source = fs.readFileSync(path.join(__dirname,'../background.js'),'utf8');
   const start = source.indexOf('function ensureNativeBridge()');
   const end = source.indexOf('function scheduleReconnect()',start);
-  vm.runInContext(`let nativePort=null,nativeReadyPort=0,nativeStarting=null,nativeError='',bridgeHost='127.0.0.1',bridgeWsPort=0,connectionEnabled=true,ws=null,reconnectDelay=1000,helloAcked=false; const DEFAULT_PORT=9876,RECONNECT_BASE_MS=1000; ${source.slice(start,end)}`, context);
-  return {context,sockets,launches:()=>launches,ready:portNumber => messages.forEach(fn=>fn({type:'ready',host:'127.0.0.1',port:portNumber})),run:code=>vm.runInContext(code,context)};
+  const helloStart = source.indexOf('function sendHello()');
+  const helloEnd = source.indexOf('function detectCapabilities()',helloStart);
+  vm.runInContext(`let nativePort=null,nativeReadyPort=0,nativeStarting=null,nativeError='',bridgeHost='127.0.0.1',bridgeWsPort=0,bridgeToken='',connectionEnabled=true,ws=null,reconnectDelay=1000,helloAcked=false,lastEventSeq=0; const DEFAULT_PORT=9876,RECONNECT_BASE_MS=1000,PROTOCOL_VERSION=1; ${source.slice(start,end)} ${source.slice(helloStart,helloEnd)}`, context);
+  return {context,sockets,sent,launches:()=>launches,ready:(portNumber,token='test-token') => messages.forEach(fn=>fn({type:'ready',host:'127.0.0.1',port:portNumber,token})),run:code=>vm.runInContext(code,context)};
 }
 
 test('concurrent startup uses one native host and the returned bridge port', async()=>{
@@ -39,6 +42,28 @@ test('concurrent startup uses one native host and the returned bridge port', asy
   await Promise.all([a,b]);
   assert.equal(h.sockets.length,1);
   assert.equal(h.sockets[0].url,'ws://127.0.0.1:43210/ws?client=extension');
+});
+
+test('native host credential is included in the authenticated hello',async()=>{
+  const h=harness();
+  const pending=h.run('connectToBridge()');
+  h.ready(43210,'native-secret');
+  await pending;
+  h.sockets[0].readyState=1;
+  h.sockets[0].onopen();
+  assert.equal(h.sent.length,1);
+  assert.equal(h.sent[0].type,'hello');
+  assert.equal(h.sent[0].token,'native-secret');
+  assert.equal(h.sockets[0].url.includes('native-secret'),false);
+});
+
+test('native ready response without a credential is rejected',async()=>{
+  const h=harness();
+  const pending=h.run('connectToBridge()');
+  h.ready(9876,'');
+  await pending;
+  assert.equal(h.sockets.length,0);
+  assert.match(h.run('nativeError'),/credential/i);
 });
 
 test('missing native host falls back to manual bridge',async()=>{

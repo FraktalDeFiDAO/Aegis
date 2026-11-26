@@ -3,13 +3,18 @@
 Status: **not ready for public submission**. ZIP preparation and automated
 verification do not establish Web Store policy compliance or approval.
 
+## Authentication status
+
+The bridge now requires a token-bearing hello as the first message from both the
+controller and extension, before registering either connection or accepting
+commands. A fresh 256-bit token is generated on each bridge start. The native
+host returns it only through the registered extension's native-messaging port;
+the CLI reads it from the owner-only runtime state file. Failed authentication
+cannot replace an authenticated connection, and restarting the bridge rotates
+the credential. See verification-2026-11-26.md for the executed tests.
+
 ## Required before public submission
 
-- Authenticate the loopback controller and extension before accepting commands.
-  Current bridge accepts empty/loopback origins and arbitrary extension origins,
-  and does not require a controller token. Optional hello-token checking is not
-  authentication (missing tokens are accepted). Test unauthenticated rejection,
-  malicious local origins, connection replacement, and credential rotation.
 - Complete local approval enforcement: `approval.respond` is a placeholder,
   `policy.set` is callable by the bridge, and unattended/trusted scope behavior is
   broad. A controller must not be able to grant itself permission. Audit every

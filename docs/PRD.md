@@ -100,7 +100,15 @@ Not the audience:
 - `api_dump/` is quota-capped (default 16 directories, oldest pruned).
 - Sanitized error responses (no internal error string leak).
 
-### 4.5 Intelligence (limited)
+### 4.5 Browser Connector
+- Optional live-browser control uses a localhost-only bridge and extension.
+- Both controller and extension authenticate a token-bearing hello before any
+  connection registration or command dispatch. Unauthenticated clients cannot
+  replace an authenticated session.
+- Tokens are generated per bridge start, delivered through registered native
+  messaging or an owner-only discovery file, and rotated on restart.
+
+### 4.6 Intelligence (limited)
 - Single URLHaus feed ingestion; threat-cache lookup for scanned URLs.
 - Not a SIEM replacement; local lookup during scan.
 
@@ -186,3 +194,4 @@ Each release increases v1 finding closure rate by 5-10%.
 | 2026-06-02 | v2 | 9 new findings fixed. 12 of 38 v1 closed. 198 tests. |
 | 2026-06-02 | v3 | 4 new findings fixed. No v2 regressions. 203 tests. |
 | 2026-06-02 | v3.5 | SPEC + PRD + plan rewritten. Adds build-vs-buy rule, per-detector contract, capability statement, and explicit backlog. |
+| 2026-11-26 | connector | Browser bridge now requires authenticated hello for controller and extension, with private discovery credentials and rotation. |

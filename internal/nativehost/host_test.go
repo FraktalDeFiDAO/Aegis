@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/coppertone/bug-hunter/app/aegis/internal/connector/bridge"
+	"github.com/gorilla/websocket"
 )
 
 func TestFrames(t *testing.T) {
@@ -63,6 +64,30 @@ func runHost(t *testing.T, req Request) (Response, func()) {
 	}
 }
 
+func assertBridgeCredential(t *testing.T, res Response) {
+	t.Helper()
+	if res.Token == "" {
+		t.Fatal("native host did not return an authentication credential")
+	}
+	addr := net.JoinHostPort(res.Host, strconv.Itoa(res.Port))
+	conn, _, err := websocket.DefaultDialer.Dial("ws://"+addr+"/ws?client=extension", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := conn.WriteJSON(bridge.Hello{Type: bridge.MsgHello, Client: "extension", Version: bridge.ProtocolVersion, Token: res.Token}); err != nil {
+		t.Fatal(err)
+	}
+	var ack bridge.HelloAck
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if err := conn.ReadJSON(&ack); err != nil {
+		t.Fatal(err)
+	}
+	if !ack.OK {
+		t.Fatalf("native host credential was rejected: %+v", ack.Error)
+	}
+}
+
 func TestOwnedBridgeStopsOnEOFAndReportsFallbackPort(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	busy, err := net.Listen("tcp", "127.0.0.1:0")
@@ -79,6 +104,7 @@ func TestOwnedBridgeStopsOnEOFAndReportsFallbackPort(t *testing.T) {
 	if !existingBridge(context.Background(), addr) {
 		t.Fatal("reported bridge is unavailable")
 	}
+	assertBridgeCredential(t, res)
 	stop()
 	if existingBridge(context.Background(), addr) {
 		t.Fatal("owned bridge survived native port EOF")
@@ -101,6 +127,7 @@ func TestReusedBridgeSurvivesEOF(t *testing.T) {
 	if !res.Reused || res.Port != port {
 		t.Fatalf("did not reuse existing bridge: %+v", res)
 	}
+	assertBridgeCredential(t, res)
 	stop()
 	if !existingBridge(ctx, addr) {
 		t.Fatal("native host stopped a bridge it did not own")

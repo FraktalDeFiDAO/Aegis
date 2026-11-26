@@ -54,6 +54,7 @@ type Config struct {
 	SessionKey         []byte `yaml:"sessionKey"`         // 32-byte AES-256 key for session storage
 	ConnectorMode      bool   `yaml:"connectorMode"`      // Use user's browser via extension
 	BridgeURL          string `yaml:"bridgeURL"`          // WebSocket URL of bridge server
+	BridgeToken        string `yaml:"-"`                  // In-memory bridge credential; never persisted in YAML
 	CaptureConsole     bool   `yaml:"captureConsole"`     // Capture console/page errors (connector, best-effort)
 	CaptureNetwork     bool   `yaml:"captureNetwork"`     // Capture network metadata (connector, best-effort)
 	CapturePageState   bool   `yaml:"capturePageState"`   // Capture bounded page snapshots (connector, best-effort)
@@ -94,7 +95,7 @@ func (c *Crawler) getBrowser() (*rod.Browser, error) {
 
 		var err error
 		if c.config.BridgeURL != "" {
-			c.connector, err = connector.Connect(c.config.BridgeURL)
+			c.connector, err = connector.Connect(c.config.BridgeURL, connector.WithToken(c.config.BridgeToken))
 		} else {
 			var addr string
 			c.connector, addr, err = connector.ConnectWithBridge("127.0.0.1")

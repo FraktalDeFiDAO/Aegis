@@ -129,6 +129,13 @@ gates), **[PARTIAL]** (implemented with documented gaps), **[STUB]**
   - `api_dump/` directory quota (max 16 by default, oldest pruned)
   - Sanitized error responses (no internal error string leak)
 - **[DONE, LIB: go-rod/rod + yaml.v3] Multi-instance ATO runner** (`runner`)
+- **[DONE, LIB: gorilla/websocket + crypto/subtle] Authenticated browser connector**
+  (`connector/bridge`, `nativehost`) — controller and extension must authenticate
+  their first hello before registration or command dispatch. A fresh 256-bit
+  credential is generated per bridge start, delivered through native messaging
+  or an owner-only (`0600`) discovery file, and compared in constant time.
+  Failed authentication cannot replace a registered session; native startup
+  aborts if secure token generation fails.
 - **[DONE, LIB: yaml.v3] Workflow YAML engine** (`workflow`) — stdlib YAML
   + custom step executor
 - **[STUB] `benchCmd`** — replaced with explicit error pointing to

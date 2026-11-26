@@ -17,6 +17,7 @@ const chromium=process.env.AEGIS_TEST_CHROMIUM||'/usr/bin/chromium';
 const sha=bytes=>createHash('sha256').update(bytes).digest('hex');
 const children=[];
 let temp,server,bridge,cdp;
+let cliEnv={};
 async function until(check,label,timeout=30000){const deadline=Date.now()+timeout;while(Date.now()<deadline){const value=await check();if(value)return value;await delay(100);}throw new Error('Timed out: '+label);}
 async function freePort(){const s=net.createServer();await new Promise(resolve=>s.listen(0,'127.0.0.1',resolve));const p=s.address().port;await new Promise(resolve=>s.close(resolve));return p;}
 function start(command,args,env={}){
@@ -24,17 +25,20 @@ function start(command,args,env={}){
  child.ownProcessGroup=true;child.log='';child.stderr.on('data',data=>{child.log=(child.log+data.toString()).slice(-12000)});children.push(child);return child;
 }
 async function run(command,args,expectSuccess=true){
- const child=spawn(command,args,{env:process.env,stdio:['ignore','pipe','pipe']});children.push(child);let stdout='',stderr='';
+ const child=spawn(command,args,{env:{...process.env,...cliEnv},stdio:['ignore','pipe','pipe']});children.push(child);let stdout='',stderr='';
  child.stdout.on('data',d=>stdout+=d);child.stderr.on('data',d=>stderr+=d);
  const result=await new Promise((resolve,reject)=>{child.once('error',reject);child.once('exit',(code)=>resolve({code,stdout,stderr}));});
  if(expectSuccess)assert.equal(result.code,0,`CLI failed: ${stderr}\n${stdout}`);return result;
 }
 class RPC{
- static async connect(url){const rpc=new RPC();rpc.socket=new WebSocket(url);rpc.pending=new Map();rpc.id=0;
+ static async connect(url,token=null){const rpc=new RPC();rpc.socket=new WebSocket(url);rpc.pending=new Map();rpc.id=0;
   rpc.socket.addEventListener('message',event=>{const msg=JSON.parse(event.data);if(!msg.id)return;const pending=rpc.pending.get(String(msg.id));if(pending){rpc.pending.delete(String(msg.id));clearTimeout(pending.timer);(msg.error&&msg.type!=='result')?pending.reject(new Error(JSON.stringify(msg.error))):pending.resolve(msg.result??msg)}});
   rpc.socket.addEventListener('close',()=>{for(const p of rpc.pending.values()){clearTimeout(p.timer);p.reject(new Error('WebSocket closed'))}rpc.pending.clear()});
-  await new Promise((resolve,reject)=>{rpc.socket.addEventListener('open',resolve,{once:true});rpc.socket.addEventListener('error',reject,{once:true})});return rpc;
+  await new Promise((resolve,reject)=>{rpc.socket.addEventListener('open',resolve,{once:true});rpc.socket.addEventListener('error',reject,{once:true})});
+  if(token!==null){try{await rpc.authenticate(token)}catch(error){rpc.close();throw error}}
+  return rpc;
  }
+ authenticate(token){const id='hello-'+(++this.id);return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{this.pending.delete(id);reject(new Error('Bridge hello timeout'))},5000);this.pending.set(id,{resolve,reject,timer});this.socket.send(JSON.stringify({id,type:'hello',client:'aegis',version:1,token}))})}
  call(method,params={},sessionId){const id=String(++this.id);return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{this.pending.delete(id);reject(new Error('RPC timeout: '+method))},25000);this.pending.set(id,{resolve,reject,timer});this.socket.send(JSON.stringify({id:Number(id),method,params,...(sessionId?{sessionId}:{})}))})}
  command(command,params={},tabId){const id='test-'+(++this.id);return new Promise((resolve,reject)=>{const timer=setTimeout(()=>{this.pending.delete(id);reject(new Error('Browser command timeout: '+command))},30000);this.pending.set(id,{resolve:msg=>msg.success?resolve(msg.data):reject(new Error(JSON.stringify(msg))),reject,timer});this.socket.send(JSON.stringify({id,type:'command',command,params,tabId,timeout:25000,version:1}))})}
  close(){this.socket.close()}
@@ -42,6 +46,7 @@ class RPC{
 
 async function main(){
  temp=await fs.mkdtemp(path.join(os.tmpdir(),'aegis-browser-e2e-'));
+ cliEnv={XDG_CONFIG_HOME:path.join(temp,'config')};
  const source=path.join(temp,'local file.bin');const second=path.join(temp,'empty.bin');await fs.writeFile(second,Buffer.alloc(0));const payload=randomBytes(512*1024+37);await fs.writeFile(source,payload);
  let received=null;
  server=http.createServer(async(req,res)=>{
@@ -55,10 +60,11 @@ async function main(){
  const bridgePort=await freePort();const bridgeURL=`ws://127.0.0.1:${bridgePort}/ws?client=aegis`;
  const go=start(binary,['connect','serve','--port',String(bridgePort)],{XDG_CONFIG_HOME:path.join(temp,'config')});
  await until(async()=>{if(go.exitCode!==null)throw new Error(go.log);try{return(await fetch(`http://127.0.0.1:${bridgePort}/health`)).ok}catch{return false}},'bridge startup');
+ const runtimeState=JSON.parse(await fs.readFile(path.join(temp,'config','aegis','connector','runtime.json'),'utf8'));const bridgeToken=runtimeState.token;assert.equal(typeof bridgeToken,'string');assert.ok(bridgeToken.length>=32);
  const extension=path.join(temp,'extension');await fs.cp(path.join(root,'extension'),extension,{recursive:true});
  const manifest=JSON.parse(await fs.readFile(path.join(extension,'manifest.chrome.json'),'utf8'));
  const workerFile=path.join(extension,'background.js');
- await fs.writeFile(workerFile,(await fs.readFile(workerFile,'utf8')).replace('const DEFAULT_PORT = 9876;',`const DEFAULT_PORT = ${bridgePort};`).replace("mode: 'manual-approve', //","mode: 'unattended', //"));
+ await fs.writeFile(workerFile,(await fs.readFile(workerFile,'utf8')).replace('const DEFAULT_PORT = 9876;',`const DEFAULT_PORT = ${bridgePort};`).replace("let bridgeToken = '';",`let bridgeToken = ${JSON.stringify(bridgeToken)};`).replace("bridgeToken = c.token || '';",'bridgeToken = c.token || bridgeToken;').replace("mode: 'manual-approve', //","mode: 'unattended', //"));
  // Test-only profile uses a dedicated bridge and explicit fixture policy. It cannot launch a user's native host.
  manifest.permissions=manifest.permissions.filter(p=>p!=='nativeMessaging');await fs.writeFile(path.join(extension,'manifest.json'),JSON.stringify(manifest));
  const profile=path.join(temp,'profile');await fs.mkdir(profile);
@@ -68,7 +74,9 @@ async function main(){
  const browserCDP=await RPC.connect(`ws://127.0.0.1:${devtools[0]}${devtools[1]}`);cdp=browserCDP;
  await fs.mkdir(path.join(temp,'downloads'));
  await browserCDP.call('Browser.setDownloadBehavior',{behavior:'allow',downloadPath:path.join(temp,'downloads')});
- bridge=await RPC.connect(bridgeURL);
+ await assert.rejects(RPC.connect(bridgeURL,'wrong-token'),/permission_denied|authentication failed/);
+ console.log('PASS wrong controller credential rejected');
+ bridge=await RPC.connect(bridgeURL,bridgeToken);
  console.log('PASS isolated extension/bridge startup');
  const implementation=await bridge.command('extension.info');assert.equal(implementation.version,'1.1.2');assert.equal(implementation.features.strictCssTargets,true);
  const tabs=await bridge.command('listTabs');const tab=tabs.tabs.find(t=>t.url===fixtureURL);assert.ok(tab,'Fixture tab is missing');
@@ -106,12 +114,12 @@ async function main(){
  // Go streaming upload targets an actual cross-origin frame, then verifies SHA-256 in the browser.
  bridge.close();await delay(50);
  await run(binary,['connect','--connector','--bridge-url',bridgeURL,'upload','--tab-id',String(tab.id),'--frame-id',String(child.frameId),'--selector','#frame-file','--file',source]);
- bridge=await RPC.connect(bridgeURL);
+ bridge=await RPC.connect(bridgeURL,bridgeToken);
  console.log('PASS local-file streaming into cross-origin iframe with SHA-256 verification');
  // Browser-backed path upload: local bytes never enter a JSON/base64 command.
  bridge.close();await delay(50);
  await run(binary,['connect','--connector','--bridge-url',bridgeURL,'upload','--tab-id',String(tab.id),'--selector','#file','--file',source,'--file',second]);
- bridge=await RPC.connect(bridgeURL);await bridge.command('click',{frameId:0,selector:'#submit'},tab.id);
+ bridge=await RPC.connect(bridgeURL,bridgeToken);await bridge.command('click',{frameId:0,selector:'#submit'},tab.id);
  await until(()=>received,'server receipt');assert.equal(received.sha256,sha(payload));assert.equal(received.size,payload.length);
  console.log('PASS native multi-file selection (including empty file) and exact bytes received by HTTP server');
  await bridge.command('input.click',{x:200,y:110},tab.id);
@@ -135,13 +143,13 @@ async function main(){
  assert.equal(sha(await fs.readFile(downloaded)),sha(payload));
  console.log('PASS browser download start, completion tracking, local retrieval and SHA-256');
  // Verify policy is a real gate in this isolated profile, without changing the user's policy.
- bridge=await RPC.connect(bridgeURL);await bridge.command('policy.set',{policy:{mode:'manual-approve',defaultGateSensitive:true}},tab.id);await assert.rejects(bridge.command('download.start',{url:fixtureURL+'download'},tab.id),/permission_denied/);
+ bridge=await RPC.connect(bridgeURL,bridgeToken);await bridge.command('policy.set',{policy:{mode:'manual-approve',defaultGateSensitive:true}},tab.id);await assert.rejects(bridge.command('download.start',{url:fixtureURL+'download'},tab.id),/permission_denied/);
  bridge.close();await delay(50);
  const rejectedFile=path.join(temp,'rejected.json');
  const rejected=await run(binary,['connect','--connector','--bridge-url',bridgeURL,'send','--command','click','--params',JSON.stringify({tabId:tab.id,selector:'#native'}),'--output',rejectedFile],false);
  assert.notEqual(rejected.code,0);assert.equal(JSON.parse(await fs.readFile(rejectedFile,'utf8')).success,false);
  console.log('PASS local policy denial is preserved and CLI saved errors return nonzero');
- bridge=await RPC.connect(bridgeURL);
+ bridge=await RPC.connect(bridgeURL,bridgeToken);
  const blockedWorkflow={id:'policy-regression',steps:[{command:'click',params:{selector:'#native',frameId:0}}]};
  await assert.rejects(bridge.command('workflow.run',{workflow:blockedWorkflow},tab.id),/permission_denied/);
  await assert.rejects(bridge.command('workflow.run',{workflow:blockedWorkflow,continueOnError:true},tab.id),/workflow_failed/);

@@ -21,6 +21,7 @@ let reconnectDelay = RECONNECT_BASE_MS;
 let reconnectTimer = null;
 let bridgeHost = '127.0.0.1';
 let bridgeWsPort = 0;
+let bridgeToken = '';
 let contentPorts = new Map(); // tabId -> port
 let dialogHandlers = new Map(); // tabId -> {resolve, reject}
 let eventQueue = [];
@@ -83,7 +84,7 @@ if (chrome.alarms && chrome.alarms.onAlarm) {
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm && alarm.name === KEEPALIVE_ALARM) {
       if (connectionEnabled && (!ws || ws.readyState !== WebSocket.OPEN)) connectToBridge();
-      else { try { ws.send(JSON.stringify({ type: 'ping', id: 'ka-' + Date.now(), timestamp: Date.now() })); } catch (_) {} }
+      else sendToBridge({ type: 'ping', id: 'ka-' + Date.now(), timestamp: Date.now() });
       flushEventQueue();
       tickSchedules();
     }
@@ -99,13 +100,14 @@ function loadConfigAndConnect() {
     const c = cfg[STORAGE_KEY] || {};
     bridgeHost = c.host || '127.0.0.1';
     bridgeWsPort = c.wsPort || 0;
+    bridgeToken = c.token || '';
     if (cfg[TARGET_KEY]) activeTargetSet = Object.assign({ tabs: [], activeTabId: null, groupId: null }, cfg[TARGET_KEY]);
     connectToBridge();
   });
 }
 
 function saveConfig() {
-  chrome.storage.local.set({ [STORAGE_KEY]: { host: bridgeHost, wsPort: bridgeWsPort } });
+  chrome.storage.local.set({ [STORAGE_KEY]: { host: bridgeHost, wsPort: bridgeWsPort, token: bridgeToken } });
 }
 
 function defaultPolicy() {
@@ -140,7 +142,7 @@ function ensureNativeBridge() {
   const attempt = new Promise((resolve) => {
     let done = false;
     let port;
-    const finish = (value, error = '') => {
+    const finish = (value, error = '', fatal = false) => {
       if (done) return;
       done = true;
       clearTimeout(timer);
@@ -149,7 +151,7 @@ function ensureNativeBridge() {
         if (nativePort === port) nativePort = null;
         try { port.disconnect(); } catch (_) {}
       }
-      resolve(value);
+      resolve(fatal ? -1 : value);
     };
     const timer = setTimeout(() => finish(0, 'Native host startup timed out. Check the host installation.'), 5000);
     try {
@@ -157,9 +159,14 @@ function ensureNativeBridge() {
       nativePort = port;
       port.onMessage.addListener((msg) => {
         if (done || nativePort !== port) return;
-        if (msg.type === 'ready' && msg.host === '127.0.0.1' && Number.isInteger(msg.port) && msg.port > 0 && msg.port <= 65535) {
-          nativeReadyPort = msg.port;
-          finish(msg.port);
+        if (msg.type === 'ready') {
+          if (msg.host === '127.0.0.1' && Number.isInteger(msg.port) && msg.port > 0 && msg.port <= 65535 && typeof msg.token === 'string' && msg.token) {
+            bridgeToken = msg.token;
+            nativeReadyPort = msg.port;
+            finish(msg.port);
+          } else {
+            finish(0, 'Native host returned an invalid ready response or authentication credential.', true);
+          }
         } else if (msg.type === 'error') finish(0, msg.error || 'Native host failed.');
       });
       port.onDisconnect.addListener(() => {
@@ -181,6 +188,10 @@ async function connectToBridge() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
   const native = await ensureNativeBridge();
   if (!connectionEnabled || (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING))) return;
+  if (native < 0) {
+    scheduleReconnect();
+    return;
+  }
   const port = native || bridgeWsPort || DEFAULT_PORT;
   const url = `ws://${bridgeHost}:${port}/ws?client=extension`;
   log('connecting to bridge', url);
@@ -195,12 +206,10 @@ async function connectToBridge() {
   const socket = ws;
   ws.onopen = () => {
     if (ws !== socket) return;
-    log('connected to bridge');
+    log('socket open; authenticating');
     reconnectDelay = RECONNECT_BASE_MS;
     helloAcked = false;
-    notifyPopup({ type: 'connected' });
     sendHello();
-    flushEventQueue();
   };
 
   ws.onmessage = (evt) => { handleBridgeMessage(evt.data); };
@@ -234,6 +243,7 @@ function sendHello() {
     type: 'hello',
     client: 'extension',
     version: PROTOCOL_VERSION,
+    token: bridgeToken,
     timestamp: Date.now(),
     capabilities: detectCapabilities(),
   };
@@ -298,11 +308,18 @@ function handleBridgeMessage(raw) {
   try { msg = JSON.parse(raw); } catch (e) { log('invalid JSON from bridge'); return; }
   switch (msg.type) {
     case 'command':
-      handleCommand(msg);
+      if (helloAcked) handleCommand(msg);
       break;
-    case 'hello':
     case 'hello_ack':
+      if (msg.ok !== true) {
+        helloAcked = false;
+        nativeError = (msg.error && msg.error.message) || 'Bridge authentication failed.';
+        try { if (ws) ws.close(); } catch (_) {}
+        break;
+      }
       helloAcked = true;
+      nativeError = '';
+      notifyPopup({ type: 'connected' });
       if (msg.lastSeq && msg.lastSeq > lastEventSeq) lastEventSeq = msg.lastSeq;
       flushEventQueue();
       break;
@@ -328,7 +345,7 @@ function handleBridgeMessage(raw) {
 
 function sendToBridge(obj) {
   if (!obj) return false;
-  if (ws && ws.readyState === WebSocket.OPEN) {
+  if (helloAcked && ws && ws.readyState === WebSocket.OPEN) {
     try { ws.send(JSON.stringify(obj)); return true; } catch (e) { log('send failed', e && e.message); }
   }
   // queue outbound events (bounded) when disconnected
@@ -340,7 +357,7 @@ function sendToBridge(obj) {
 }
 
 function flushEventQueue() {
-  if (!ws || ws.readyState !== WebSocket.OPEN || !eventQueue.length) return;
+  if (!helloAcked || !ws || ws.readyState !== WebSocket.OPEN || !eventQueue.length) return;
   const q = eventQueue.splice(0, eventQueue.length);
   for (const ev of q) {
     try { ws.send(JSON.stringify(ev)); } catch (_) { eventQueue.unshift(ev); break; }
@@ -845,7 +862,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.type) return false;
   if (msg.type === 'getStatus') {
-    sendResponse({ connected: !!(ws && ws.readyState === WebSocket.OPEN), helloAcked, bridgeHost, bridgeWsPort: nativeReadyPort || bridgeWsPort, nativeError, targetSet: activeTargetSet });
+    sendResponse({ connected: !!(helloAcked && ws && ws.readyState === WebSocket.OPEN), helloAcked, bridgeHost, bridgeWsPort: nativeReadyPort || bridgeWsPort, nativeError, targetSet: activeTargetSet });
     return false;
   }
   if (msg.type === 'reconnect') {
@@ -855,6 +872,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     nativeReadyPort = 0;
     bridgeHost = msg.host || bridgeHost || '127.0.0.1';
     bridgeWsPort = msg.wsPort || 0;
+    bridgeToken = typeof msg.token === 'string' ? msg.token : '';
     saveConfig();
     try { if (ws) ws.close(); } catch (_) {}
     ws = null;

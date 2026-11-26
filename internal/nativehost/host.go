@@ -11,6 +11,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -29,6 +31,7 @@ type Response struct {
 	Type   string `json:"type"`
 	Host   string `json:"host,omitempty"`
 	Port   int    `json:"port,omitempty"`
+	Token  string `json:"token,omitempty"`
 	Reused bool   `json:"reused,omitempty"`
 	Error  string `json:"error,omitempty"`
 }
@@ -120,7 +123,14 @@ func Run(ctx context.Context, in io.Reader, out io.Writer) error {
 			}
 			address := net.JoinHostPort("127.0.0.1", strconv.Itoa(req.Port))
 			if existingBridge(ctx, address) {
-				ready = &Response{Type: "ready", Host: "127.0.0.1", Port: req.Port, Reused: true}
+				token, err := runtimeToken(address)
+				if err != nil {
+					if e := writeMessage(out, Response{Type: "error", Error: err.Error()}); e != nil {
+						return e
+					}
+					continue
+				}
+				ready = &Response{Type: "ready", Host: "127.0.0.1", Port: req.Port, Token: token, Reused: true}
 			} else {
 				owned = bridge.NewServer(bridge.ServerConfig{Addr: "127.0.0.1", Port: req.Port})
 				addr, err := owned.StartNonBlocking(ctx)
@@ -138,13 +148,38 @@ func Run(ctx context.Context, in io.Reader, out io.Writer) error {
 				if err != nil {
 					return err
 				}
-				ready = &Response{Type: "ready", Host: "127.0.0.1", Port: port}
+				ready = &Response{Type: "ready", Host: "127.0.0.1", Port: port, Token: owned.Token()}
 			}
 			if err := writeMessage(out, ready); err != nil {
 				return err
 			}
 		}
 	}
+}
+
+func runtimeToken(address string) (string, error) {
+	var path string
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		path = filepath.Join(xdg, "aegis", "connector", "runtime.json")
+	} else if home, err := os.UserHomeDir(); err == nil && home != "" {
+		path = filepath.Join(home, ".config", "aegis", "connector", "runtime.json")
+	}
+	if path == "" {
+		return "", fmt.Errorf("existing bridge has no readable authentication state")
+	}
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
+		return "", fmt.Errorf("existing bridge authentication state is missing or not private; restart the bridge")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read bridge authentication state: %w", err)
+	}
+	var state bridge.RuntimeState
+	if err := json.Unmarshal(data, &state); err != nil || state.Addr != address || state.Token == "" {
+		return "", fmt.Errorf("existing bridge authentication state does not match %s; restart the bridge", address)
+	}
+	return state.Token, nil
 }
 
 func existingBridge(ctx context.Context, addr string) bool {

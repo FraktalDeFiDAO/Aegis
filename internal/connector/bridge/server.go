@@ -3,6 +3,7 @@ package bridge
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -45,6 +46,7 @@ type Server struct {
 	token     string
 
 	runtimePath string
+	tokenErr    error
 	stopOnce    sync.Once
 }
 
@@ -60,7 +62,7 @@ type ServerConfig struct {
 	Addr        string
 	Port        int
 	Logger      *slog.Logger
-	Token       string // optional shared-secret for discovery/handshake
+	Token       string // shared secret for discovery/handshake; generated when empty
 	RuntimePath string // optional path to persist runtime/discovery state
 }
 
@@ -84,6 +86,10 @@ func NewServer(cfg ServerConfig) *Server {
 	if cfg.Logger == nil {
 		cfg.Logger = slog.Default()
 	}
+	var tokenErr error
+	if cfg.Token == "" {
+		cfg.Token, tokenErr = randomToken(32)
+	}
 	return &Server{
 		addr:        cfg.Addr,
 		port:        cfg.Port,
@@ -93,7 +99,13 @@ func NewServer(cfg ServerConfig) *Server {
 		events:      make([]Event, 0, 256),
 		token:       cfg.Token,
 		runtimePath: cfg.RuntimePath,
+		tokenErr:    tokenErr,
 	}
+}
+
+// Token returns the credential required by the hello handshake.
+func (s *Server) Token() string {
+	return s.token
 }
 
 // Start begins listening for connections. It blocks until ctx is cancelled.
@@ -112,6 +124,9 @@ func (s *Server) StartNonBlocking(ctx context.Context) (string, error) {
 }
 
 func (s *Server) startHTTP(ctx context.Context) (string, error) {
+	if s.tokenErr != nil {
+		return "", fmt.Errorf("generate bridge authentication token: %w", s.tokenErr)
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", s.handleWebSocket)
 	mux.HandleFunc("/health", s.handleHealth)
@@ -339,18 +354,68 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
+	clientType := r.URL.Query().Get("client")
+	if clientType == "" {
+		clientType = "aegis"
+	}
+	if clientType != "aegis" && clientType != "extension" {
+		http.Error(w, "invalid client role", http.StatusBadRequest)
+		return
+	}
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		s.logger.Error("websocket upgrade failed", "error", err)
 		return
 	}
-	clientType := r.URL.Query().Get("client")
+	hello, ok := s.authenticate(conn, clientType)
+	if !ok {
+		return
+	}
 	switch clientType {
 	case "extension":
+		s.extCapsMu.Lock()
+		s.extCaps = hello.Capabilities
+		s.extCapsMu.Unlock()
 		s.handleExtension(conn)
-	default:
+	case "aegis":
 		s.handleAegis(conn)
 	}
+}
+
+// authenticate requires a valid hello before a connection can replace or use a
+// registered controller/extension session. Failed authentication is inert.
+func (s *Server) authenticate(conn *websocket.Conn, clientType string) (*Hello, bool) {
+	ack := HelloAck{Type: MsgHelloAck, Version: ProtocolVersion, OK: false, LastSeq: atomic.LoadInt64(&s.eventSeq), Timestamp: nowMs()}
+	if clientType == "extension" {
+		ack.Capabilities = &Capabilities{Commands: []string{CmdHello, CmdCancel}}
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	_, data, err := conn.ReadMessage()
+	if err != nil {
+		_ = conn.Close()
+		return nil, false
+	}
+	msg, err := ParseMessage(data)
+	hello, isHello := msg.(*Hello)
+	if isHello {
+		ack.ID = hello.ID
+	}
+	if err != nil || !isHello || hello.Client != clientType {
+		ack.Error = &ErrorInfo{Code: ErrCodeInvalid, Message: "first message must be a hello for the requested client role"}
+	} else if subtle.ConstantTimeCompare([]byte(hello.Token), []byte(s.token)) != 1 {
+		ack.Error = &ErrorInfo{Code: ErrCodeDenied, Message: "authentication failed"}
+	} else {
+		ack.OK = true
+	}
+	_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	if err := conn.WriteJSON(ack); err != nil || !ack.OK {
+		_ = conn.Close()
+		return nil, false
+	}
+	if hello.ResumeFrom > 0 {
+		s.replayEventsTo(conn, hello.ResumeFrom)
+	}
+	return hello, true
 }
 
 func isLocalOrigin(o string) bool {
@@ -449,19 +514,7 @@ func (s *Server) handleExtensionMessage(conn *websocket.Conn, data []byte) {
 	}
 	switch m := msg.(type) {
 	case *Hello:
-		s.extCapsMu.Lock()
-		s.extCaps = m.Capabilities
-		s.extCapsMu.Unlock()
-		ack := HelloAck{Type: MsgHelloAck, Version: ProtocolVersion, OK: true, LastSeq: atomic.LoadInt64(&s.eventSeq), Timestamp: nowMs(), Capabilities: &Capabilities{Commands: []string{CmdHello, CmdCancel}}}
-		if s.token != "" && m.Token != "" && m.Token != s.token {
-			ack.OK = false
-			ack.Error = &ErrorInfo{Code: ErrCodeDenied, Message: "invalid token"}
-		}
-		_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-		_ = conn.WriteJSON(ack)
-		if m.ResumeFrom > 0 {
-			s.replayEventsTo(conn, m.ResumeFrom)
-		}
+		// Hello is accepted only once, before the connection is registered.
 	case *Result:
 		id := CorrelationID(m.ID, m.RequestID)
 		if m.Progress {
@@ -504,12 +557,7 @@ func (s *Server) handleAegisMessage(conn *websocket.Conn, data []byte) {
 	}
 	switch m := msg.(type) {
 	case *Hello:
-		ack := HelloAck{Type: MsgHelloAck, Version: ProtocolVersion, OK: true, LastSeq: atomic.LoadInt64(&s.eventSeq), Timestamp: nowMs()}
-		_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-		_ = conn.WriteJSON(ack)
-		if m.ResumeFrom > 0 {
-			s.replayEventsTo(conn, m.ResumeFrom)
-		}
+		// Hello is accepted only once, before the connection is registered.
 	case *Command:
 		if m.Command == CmdCancel {
 			// cancel by target in params or RequestID
@@ -655,7 +703,8 @@ func (s *Server) pendingCount() int {
 type RuntimeState struct {
 	Addr      string    `json:"addr"`
 	Port      int       `json:"port,omitempty"`
-	TokenSet  bool      `json:"tokenSet,omitempty"`
+	Token     string    `json:"token"`
+	TokenSet  bool      `json:"tokenSet"`
 	Version   int       `json:"version"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -671,7 +720,7 @@ func (s *Server) persistRuntimeState(addr string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
-	st := RuntimeState{Addr: addr, TokenSet: s.token != "", Version: ProtocolVersion, UpdatedAt: time.Now()}
+	st := RuntimeState{Addr: addr, Token: s.token, TokenSet: true, Version: ProtocolVersion, UpdatedAt: time.Now()}
 	b, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {
 		return err
@@ -714,10 +763,10 @@ func mustRaw(v interface{}) json.RawMessage {
 	return b
 }
 
-func randomToken(n int) string {
+func randomToken(n int) (string, error) {
 	b := make([]byte, n)
 	if _, err := rand.Read(b); err != nil {
-		return generateID()
+		return "", err
 	}
-	return hex.EncodeToString(b)
+	return hex.EncodeToString(b), nil
 }

@@ -53,6 +53,8 @@ is occupied, the native host reports the selected fallback port automatically.
 An existing Aegis bridge is reused; a bridge launched by the extension stops when
 its native messaging port closes. Firefox and installations without the native
 host can continue using a manually started bridge. The installer currently supports Linux only.
+The native host returns a per-start authentication token through the registered
+native-messaging port. No token entry is required for this automatic flow.
 
 ### Manual bridge startup
 
@@ -106,6 +108,14 @@ aegis schedule delete --connector --id <id>
 aegis connect --connector send --command screenshot.fullPage --params '{}' --output screenshot.json
 ```
 
+For manual setup, `aegis connect serve` prints the runtime-state path. Copy the
+`token` value from that owner-only file (normally
+`~/.config/aegis/connector/runtime.json`, or `$XDG_CONFIG_HOME/aegis/connector/runtime.json`)
+into the popup's **Manual Bridge Token** field, then connect. Do not paste the
+token into URLs, shell arguments, issues, or logs. The CLI reads the same file
+automatically when its bridge URL matches. Restarting the bridge rotates the
+token; update the manual field after each restart.
+
 If the bridge server is not already running, Aegis starts it automatically.
 The extension connects to `ws://127.0.0.1:<port>/ws` (localhost only).
 
@@ -116,7 +126,7 @@ Your Browser <--WebSocket--> Bridge Server (Go) <--WebSocket--> Aegis CLI
 ```
 
 1. Aegis starts a local WebSocket bridge server on `127.0.0.1`
-2. The extension connects to the bridge via WebSocket and exchanges hello/capabilities
+2. The extension and controller each authenticate with a token-bearing hello and exchange capabilities before registration
 3. Aegis sends commands (navigate, click, extract, screenshot, observe, workflow/task ops, etc.)
 4. The bridge relays commands to the extension with correlation/timeout/cancel handling
 5. The extension executes operations (capability/policy gated) and returns results/events
@@ -186,9 +196,10 @@ file pickers, browser settings/security UI, hardware credentials, and closed
 shadow roots remain outside this layer.
 
 Validation: `node scripts/test-browser-connector.cjs ./aegis` launches a separate
-headless Chromium profile against local fixtures and an isolated bridge. It
-verifies file/server hashes, downloads, cross-origin frames, trusted input/native
-JS dialogs/HTML5 dragging, full-page PNG dimensions and preserved policy denials.
+headless Chromium profile against local fixtures and an isolated authenticated bridge.
+It verifies wrong-token rejection, extension/controller authentication,
+file/server hashes, downloads, cross-origin frames, trusted input/native JS
+dialogs/HTML5 dragging, full-page PNG dimensions and preserved policy denials.
 The user's browser profile and real accounts are not used.
 
 - **Core:** navigation/tabs/elements/interactions/waits/eval/cookies/storage/screenshot, session capture.
@@ -201,10 +212,11 @@ The user's browser profile and real accounts are not used.
 ## Security
 
 - Bridge server binds to **127.0.0.1 only** — no network exposure
-- Localhost-only operation and optional local discovery/runtime state file
+- Controller and extension must authenticate before registration or commands; failed authentication cannot replace a session
+- Per-start 256-bit tokens are delivered through native messaging or an owner-only (`0600`) discovery file, never in WebSocket URLs
 - No secrets/PII logging by default; sensitive captures redacted/bounded where implemented
 - Sensitive actions can be gated by local policy mode; hard blocks for internal/unsupported pages
-- Commands are only accepted from localhost WebSocket connections
+- Commands are accepted only from authenticated localhost WebSocket connections
 
 ## Limitations
 
@@ -221,6 +233,8 @@ The user's browser profile and real accounts are not used.
 - Ensure Aegis is running with `--connector` or bridge is started
 - Check that the bridge server started (Aegis prints the address) and `aegis connect status`
 - Click the extension icon and verify the host/port match the bridge address
+- Reload the extension after upgrading the bridge/native host. Old extensions without token support cannot authenticate.
+- For manual setup, copy the current token from the private runtime file; bridge restarts rotate it.
 
 ### Commands time out
 

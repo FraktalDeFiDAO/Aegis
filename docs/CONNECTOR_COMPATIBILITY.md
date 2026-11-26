@@ -8,8 +8,8 @@ Covers browser-extension connector features implemented/planned per `docs/plans/
 | Capability | Chrome/Brave/Chromium (MV3) | Firefox (MV2 temp add-on) | Notes |
 |---|---:|---:|---|
 | Core control (nav/tabs/elements/cookies/storage/screenshot) | Primary | Best-effort | Internal pages (`chrome://`, `about:`) unsupported by extension APIs |
-| Protocol v1 handshake/correlation/progress-cancel hooks | Yes | Yes (best-effort) | Additive/backward-tolerant |
-| Runtime discovery/state (`~/.config/aegis/connector/runtime.json` or XDG) | Yes | Yes | Localhost-only |
+| Authenticated protocol v1 handshake/correlation/progress-cancel hooks | Yes | Yes (best-effort) | Token-bearing hello required before registration/commands |
+| Runtime discovery/state (`~/.config/aegis/connector/runtime.json` or XDG) | Yes | Yes | Localhost-only; token stored owner-only (`0600`), generated per bridge start |
 | Observability (debugger console/network/page state) | Best-effort, capability-gated | Limited/varies | `chrome.debugger` availability/UX differs; attach is explicit and may show indicator |
 | Tab groups (native) | Yes (`tabGroups`) | Fallback logical target set | Deterministic targeting should use explicit tab IDs when available |
 | Recording/workflows (local storage, replay, export/import CLI) | Best-effort | Best-effort | Sensitive-field redaction default; MV3 lifecycle can interrupt long sessions |
@@ -25,7 +25,8 @@ Covers browser-extension connector features implemented/planned per `docs/plans/
 |---|---|---|
 | Go protocol/bridge/connector/crawler/cmd build & tests | Yes (`go build ./...`, `go test ./...`, selected `-race`) | No |
 | Extension JS/manifest syntax | Yes (`node --check`, `jq`) | No |
-| Live extension↔bridge E2E, UI flows, browser permissions, MV3 lifecycle behavior | No | Yes (Chrome/Brave/Firefox) — see `docs/plans/2026-11-15-connector-manual-smoke-checklist.md` |
+| Isolated Chromium extension↔bridge E2E, including authentication | Yes (`node scripts/test-browser-connector.cjs ./aegis`) | No |
+| Live-profile UI flows, browser permissions, MV3 lifecycle behavior | No | Yes (Chrome/Brave/Firefox) — see `docs/plans/2026-11-15-connector-manual-smoke-checklist.md` |
 
 ## Known limitations / residual risks
 - Extension service worker suspension (MV3) can delay/miss alarms or in-memory state; persisted storage and alarms mitigate but do not guarantee continuous background execution.

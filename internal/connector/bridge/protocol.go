@@ -85,7 +85,7 @@ type Hello struct {
 	Version      int           `json:"version"`
 	Capabilities *Capabilities `json:"capabilities,omitempty"`
 	ResumeFrom   int64         `json:"resumeFrom,omitempty"` // request event replay from seq
-	Token        string        `json:"token,omitempty"`      // optional shared-secret
+	Token        string        `json:"token,omitempty"`      // required shared-secret; omitted only in invalid/hello test messages
 	Timestamp    int64         `json:"timestamp,omitempty"`
 }
 

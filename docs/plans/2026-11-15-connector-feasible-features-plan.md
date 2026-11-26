@@ -144,7 +144,7 @@ Add browser-automation/product capabilities that fit Aegis (authorized security 
 - **Default-gated sensitive actions (require confirmation unless explicitly policy-allowed for trusted scope):** `eval`/script execution, cookie/storage read-write/export, downloads and uploads/file-input assignment, cross-origin navigation or navigation outside allowed scope, form submission/credential-entry flows, tab debugger attach/observability capture, and destructive/permanent operations (e.g. close/remove data). Hard-block internal/unsupported pages (`chrome://`, `about:`) and actions denied by site policy regardless of mode.
 - **Prompt/approval channel**: extension popup/notification approval for gated actions; CLI `--approve/--policy` flags and non-interactive defaults for CI-like use; clear reason/context shown for each prompt.
 - **Popup UX**: connection state, active tab/session, active target set, recent actions, recording/schedule status, policy settings, and approval queue.
-- **Hardening**: audit log of actions/decisions, strict localhost-only bridge binding and optional shared-secret handshake for discovery file.
+- **Hardening**: audit log of actions/decisions, strict localhost-only bridge binding and required shared-secret hello authentication using the private discovery file/native messaging (mandatory since 2026-11-26).
 - **Tests:** policy evaluation unit tests, mode/allow/deny enforcement in handler, default-gating coverage.
 - **Exit criteria:** sensitive actions are controllable/auditable locally with clear defaults and documented mode semantics/limitations.
 

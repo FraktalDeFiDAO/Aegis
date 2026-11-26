@@ -15,9 +15,11 @@ A connected controller or AI agent may transmit results to its configured servic
 its data practices must be reviewed separately. This draft does not assert that
 no personal, financial, health, authentication, or browsing data can be processed.
 
-Configuration, policies, workspace identifiers, saved workflows, recordings,
-schedules, and bounded audit/run histories are stored in browser extension local
-storage. Downloads, CLI output and controller logs may persist on disk separately.
+Configuration, manually entered bridge authentication tokens, policies, workspace
+identifiers, saved workflows, recordings, schedules, and bounded audit/run histories
+are stored in browser extension local storage. Native-host credentials are kept in
+memory; the bridge's discovery token is also stored in its owner-only runtime file.
+Downloads, CLI output and controller logs may persist on disk separately.
 Secret redaction is best effort; do not record confidential workflows until the
 secret handling review is complete.
 

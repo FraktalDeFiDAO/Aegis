@@ -1,11 +1,36 @@
 package connector
 
 import (
+	"context"
 	"encoding/json"
+	"path/filepath"
 	"testing"
 
 	"github.com/coppertone/bug-hunter/app/aegis/internal/connector/bridge"
 )
+
+func TestConnectRejectsFailedAuthentication(t *testing.T) {
+	srv := bridge.NewServer(bridge.ServerConfig{Token: "test-token", RuntimePath: filepath.Join(t.TempDir(), "runtime.json")})
+	addr, err := srv.StartNonBlocking(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = srv.Stop() })
+
+	url := "ws://" + addr + "/ws?client=aegis"
+	conn, err := Connect(url)
+	if err == nil {
+		conn.Close()
+		t.Fatal("connector accepted a failed hello authentication response")
+	}
+	authenticated, err := Connect(url, WithToken("test-token"))
+	if err != nil {
+		t.Fatalf("authenticated connector: %v", err)
+	}
+	if err := authenticated.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestNewPage(t *testing.T) {
 	c := &Connector{

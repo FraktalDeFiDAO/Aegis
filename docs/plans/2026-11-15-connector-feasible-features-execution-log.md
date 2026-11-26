@@ -25,7 +25,7 @@
 - **Protocol evolution:** additive, versioned (`version: 1`), backward-tolerant parsing; include `requestId` aliasing `id` for correlation, `capabilities` in hello, structured error `{code,message,details}`, optional `progress` event/result subtype, and `cancel` command referencing target request ID.
 - **Dispatcher model:** single websocket reader goroutine owns all inbound frames and resolves pending responses by ID; `sendCommand` registers waiter and writes only. Apply same pattern on both connector client and bridge server routing.
 - **Reconnect/replay:** controller/connector auto-reconnect with bounded exponential backoff+jitter; extension auto-reconnect as today plus alarm keepalive and outbound event queue (bounded). Bridge buffers recent events (ring, bounded) and supports resume cursor/best-effort replay for reconnecting controllers.
-- **Discovery/state:** persist runtime state (bridge address/port, optional shared-secret token, timestamps) in user-local controlled path (XDG config/cache or `~/.config/aegis/connector/`) with restrictive perms; localhost-only binding preserved.
+- **Discovery/state:** persist runtime state (bridge address/port, shared-secret token, timestamps) in user-local controlled path (XDG config/cache or `~/.config/aegis/connector/`) with restrictive perms; localhost-only binding preserved. Token authentication became mandatory in the 2026-11-26 hardening milestone.
 - **Security defaults:** no secrets in logs/artifacts by default, redaction hooks, explicit opt-in for sensitive capture, bounded sizes/retention; no remote exposure.
 
 ## 2. Phase 0 — Foundation hardening & protocol evolution
@@ -256,3 +256,33 @@ Status: **in progress (continuation)**
 - **Manual live-browser E2E/smoke required (environment blocker):** Chrome/Brave/Firefox extension↔bridge handshake/interop and smoke per `docs/plans/2026-11-15-connector-manual-smoke-checklist.md` not auto-executable here.
 - **Phase 1–7 parity gaps remain:** richer scheduler history/notification UX parity, interactive approval UX (popup approval queue), broader exploit/session integration beyond current paths, final ops/compatibility polish.
 - Full-repo `-race`/all-package gates not rerun this increment (validated targeted packages above).
+
+## 16. Authentication hardening (2026-11-26)
+
+### Implemented
+- Controller and extension must complete a token-bearing hello before bridge
+  registration or command dispatch. Failed authentication cannot replace a live
+  session; duplicate post-registration hello messages are not an auth bypass.
+- Fresh 256-bit tokens are generated per bridge start with no predictable RNG
+  fallback. Private runtime state is owner-only and rotated on restart.
+- Native messaging returns credentials to the registered extension. The CLI and
+  crawler consume matching discovery credentials in memory, never through YAML,
+  WebSocket URLs, or token command-line flags. Manual popup setup is documented.
+- The extension reports connected and releases queued events only after a
+  successful hello acknowledgment.
+
+### Validation
+- Public WebSocket authentication/replacement/rotation and native-host owned and
+  reused credential tests: **PASS**.
+- `go vet ./...`, `go build ./...`, `go test -count=1 ./...`: **PASS**.
+- Focused race tests for cmd/aegis, crawler, connector/bridge, nativehost: **PASS**.
+- Node extension tests: **15 passed**. Python installer/helper/release tests: **PASS**.
+- Isolated Chromium suite, including wrong-token rejection and authenticated
+  extension/CLI/raw-controller flows: **PASS**.
+- Chrome candidate package verification: **PASS** (structure/CRC/version; public
+  release gates remain separate).
+
+### Remaining
+- This closes the authentication item in `docs/chrome-web-store/README.md`, not
+  the approval-enforcement, remote-code, disclosure, publisher, screenshot,
+  release-installer, clean-store, or platform verification blockers.

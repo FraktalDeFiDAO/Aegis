@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const cfg = await getConfig();
   document.getElementById('host-input').value = cfg.host || '127.0.0.1';
   document.getElementById('port-input').value = cfg.wsPort || '';
+  document.getElementById('token-input').value = cfg.token || '';
 
   // Bind button handlers (no inline onclick — MV3 CSP)
   document.getElementById('btn-connect').addEventListener('click', connect);
@@ -64,11 +65,12 @@ function setConfig(cfg) {
 async function connect() {
   const host = document.getElementById('host-input').value.trim() || '127.0.0.1';
   const port = parseInt(document.getElementById('port-input').value) || 0;
+  const token = document.getElementById('token-input').value.trim();
 
-  await setConfig({ host, wsPort: port });
+  await setConfig({ host, wsPort: port, token });
 
   // Tell background to reconnect
-  chrome.runtime.sendMessage({ type: 'reconnect', host, wsPort: port });
+  chrome.runtime.sendMessage({ type: 'reconnect', host, wsPort: port, token });
 
   updateUI(null); // show connecting state
 }
@@ -87,6 +89,7 @@ function updateUI(connected) {
   const btnDisconnect = document.getElementById('btn-disconnect');
   const hostInput = document.getElementById('host-input');
   const portInput = document.getElementById('port-input');
+  const tokenInput = document.getElementById('token-input');
 
   if (connected === null) {
     dot.className = 'dot connecting';
@@ -103,6 +106,7 @@ function updateUI(connected) {
     btnDisconnect.disabled = false;
     hostInput.disabled = true;
     portInput.disabled = true;
+    tokenInput.disabled = true;
   } else {
     dot.className = 'dot disconnected';
     text.textContent = 'Disconnected';
@@ -112,6 +116,7 @@ function updateUI(connected) {
     btnDisconnect.style.display = 'none';
     hostInput.disabled = false;
     portInput.disabled = false;
+    tokenInput.disabled = false;
   }
 }
 

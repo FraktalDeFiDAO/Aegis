@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -21,6 +22,7 @@ import (
 type runtimeState struct {
 	Addr      string    `json:"addr"`
 	Port      int       `json:"port,omitempty"`
+	Token     string    `json:"token"`
 	TokenSet  bool      `json:"tokenSet,omitempty"`
 	Version   int       `json:"version"`
 	UpdatedAt time.Time `json:"updatedAt"`
@@ -53,7 +55,7 @@ func connectServeCmd() *cobra.Command {
 				return err
 			}
 			defer srv.Stop()
-			fmt.Fprintf(cmd.OutOrStdout(), "Aegis bridge listening on %s\nSet the extension host and port to this address. Press Ctrl+C to stop.\n", addr)
+			fmt.Fprintf(cmd.OutOrStdout(), "Aegis bridge listening on %s\nThe native host discovers authentication automatically. For manual extension setup, use the token in %s (keep it private). Press Ctrl+C to stop.\n", addr, defaultRuntimeStatePath())
 			<-ctx.Done()
 			return nil
 		},
@@ -359,24 +361,60 @@ func defaultRuntimeStatePath() string {
 
 // Prefer the bridge already started by the browser's native host. Runtime state
 // is advisory and must never redirect a local connector to a remote machine.
-func discoveredBridgeURL() string {
+func discoveredBridge() (string, string) {
 	const fallback = "ws://127.0.0.1:9876/ws?client=aegis"
-	b, err := os.ReadFile(defaultRuntimeStatePath())
+	path := defaultRuntimeStatePath()
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o077 != 0 {
+		return fallback, ""
+	}
+	b, err := os.ReadFile(path)
 	if err != nil {
-		return fallback
+		return fallback, ""
 	}
 	var state runtimeState
 	if json.Unmarshal(b, &state) != nil {
-		return fallback
+		return fallback, ""
 	}
 	host, port, err := net.SplitHostPort(state.Addr)
 	if err != nil {
-		return fallback
+		return fallback, ""
 	}
 	ip := net.ParseIP(host)
 	n, err := strconv.Atoi(port)
 	if ip == nil || !ip.IsLoopback() || err != nil || n < 1 || n > 65535 {
-		return fallback
+		return fallback, ""
 	}
-	return "ws://" + net.JoinHostPort(host, port) + "/ws?client=aegis"
+	return "ws://" + net.JoinHostPort(host, port) + "/ws?client=aegis", state.Token
+}
+
+func discoveredBridgeURL() string {
+	url, _ := discoveredBridge()
+	return url
+}
+
+func discoveredBridgeToken(wsURL string) string {
+	discovered, token := discoveredBridge()
+	requestedKey := controllerURLKey(wsURL)
+	if requestedKey == "" || requestedKey != controllerURLKey(discovered) {
+		return ""
+	}
+	return token
+}
+
+func controllerURLKey(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "ws" || u.Host == "" || u.Path != "/ws" || u.User != nil || u.Fragment != "" {
+		return ""
+	}
+	query := u.Query()
+	client := query.Get("client")
+	if client == "" {
+		client = "aegis"
+	}
+	query.Del("client")
+	if client != "aegis" || len(query) != 0 {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host + u.Path
 }
