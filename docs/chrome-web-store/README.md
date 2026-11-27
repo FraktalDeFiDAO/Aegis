@@ -34,6 +34,12 @@ the credential. See verification-2026-11-26.md for the executed tests.
   SHA256SUMS; the manual matrix workflow packages without publishing.
 - CI now includes full-repo race tests and the isolated Chromium approval suite.
 
+## Feature/spec acceptance
+
+The [plan conformance matrix](../plans/2026-11-27-plan-conformance.md) records
+remaining connector/core gaps and quality gates. Packaging/security verification
+does not establish full plan completion.
+
 ## Required before public submission
 
 - Confirm the publisher's legal identity, store account verification, support

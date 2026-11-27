@@ -1,7 +1,7 @@
 # Plan: Integrate Feasible Claude-in-Chrome Features into Aegis Connector
 
 **Date:** 2026-11-15 (amended 2026-11-16)\
-**Status:** Proposed\
+**Status:** Partially implemented — see [current conformance](2026-11-27-plan-conformance.md)\
 **Scope:** Add browser-automation and connector capabilities to Aegis that are feasible within the existing extension+bridge architecture and aligned with Aegis’s authorized security-scanning workflows. This plan targets practical parity for automation/observability/workflow features, not parity with Anthropic’s Claude product stack.
 
 ## 1. Scope & boundaries

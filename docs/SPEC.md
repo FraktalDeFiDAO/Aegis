@@ -28,6 +28,17 @@
 - Quality gates in §10 are **non-negotiable**. They run in CI and
   locally via `scripts/go-run.sh` on the Podman overlay-driver host.
 
+## Current conformance (2026-11-27)
+
+The requirements below remain acceptance criteria, not a claim that every gate
+currently passes. See [the plan-conformance matrix](plans/2026-11-27-plan-conformance.md).
+Baseline internal statement coverage is 44.4%; branch coverage is unmeasured.
+Go workflow crawl/inject/extract integrations are unsupported and fail explicitly.
+Service scanning is detection-only: Redis must not execute Lua shell probes.
+CIDR enumeration is capped at 256 targets; service scans return typed findings or
+an explicit per-target `ScanFailure`. Full-page connector screenshots use the
+full-page command; invalid encoded image data is an error.
+
 ## 1. Architecture
 
 - **Language:** Go 1.25+

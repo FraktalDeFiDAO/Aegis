@@ -321,3 +321,11 @@ Status: **in progress (continuation)**
 - Publisher identity/account/legal declarations, clean store-ID installation,
   live macOS/Windows/Firefox checks, remote CI/release matrix, PR review/merge,
   and branch protection remain external release steps.
+
+## 18. Plan conformance reconciliation (2026-11-27)
+
+See [the current matrix](2026-11-27-plan-conformance.md). Passing security/package
+checks does not close remaining feature phases or the core v4 backlog. Confirmed
+worker, Redis, workflow and screenshot defects are addressed with regressions;
+unsupported Go workflow actions now fail explicitly. Remaining protocol, lifecycle,
+workflow/recon, scheduler, coverage and manual acceptance gates stay open.
