@@ -1,0 +1,25 @@
+Use $google-play-app-content, $google-play-developer and $aegis-browser to complete and verify the App Content section for Fraktal Media Center through Aegis.
+
+Expected target—verify before writing:
+- App: Fraktal Media Center / FraktalMediaCenter
+- Package: com.copperconsulting.FraktalMediaCenter
+- Developer account ID: 6674997077308448819
+- Play Console app ID: 4975441764106782797
+- Starting page: https://play.google.com/console/u/1/developers/6674997077308448819/app/4975441764106782797/app-content/overview
+The Google account slot in that URL may differ in the current session. Confirm developer/app/package identity rather than trusting the slot or display name alone.
+
+This authorizes completing and saving accurate App Content declarations for this app. It does not authorize uploading a release, changing pricing/distribution, or clicking an app-wide Send for review or Publish changes action.
+
+1. Inspect the live Needs attention and Actioned lists using Aegis. Use the dedicated Aegis tab group for any new task tab. Discover every current card, including conditional requirements; do not assume a fixed list or count.
+
+2. Locate the authoritative app repository and intended release evidence. Inspect the merged manifest, dependencies/SDK versions, runtime configuration, backend data flows, user-facing features and existing privacy policy. Build a private per-card evidence ledger before entering material answers. Existing Console answers and policy documents alone do not prove actual app behavior.
+
+3. Address privacy policy, ads, app access/reviewer instructions, content ratings, target audience, Data safety/deletion, Advertising ID, government affiliation, financial features, health features, trader status, foreground services, and any additional cards actually required by the Console. Select each repeated Start declaration/Manage button within the correct card, not by a global first match.
+
+4. Enter only answers supported by implementation evidence or confirmed owner facts. Do not default everything to No, assume adult-only, invent compliance claims, or treat a media app as automatically using a particular foreground-service type. Include relevant third-party SDK and server behavior. Verify submitted URLs and functional review/deletion paths.
+
+5. Continue independently on supported declarations. Batch only necessary owner questions about facts unavailable from the repository, runtime, providers or existing documentation. Keep genuinely unknown declarations blocked rather than guessed. Protect reviewer credentials and secrets; use authorized secure sources and private parameter files.
+
+6. Save each supported form, observe errors/success, reopen it and verify persisted values, then recheck the overview. Apply required action-time confirmation or handoff rules for attestations, sensitive disclosures and security gates. Do not bypass Aegis policy or blindly replay a failed submission.
+
+Finish with a concise card-by-card result: before/after status, evidence, saved-and-reopened confirmation, remaining warnings, owner questions and any pending Google processing/review. Claim App Content complete only when every required declaration is accounted for, no required answers remain unresolved, and the live overview has no remaining declaration action. A saved form is not proof of Google approval or public release.

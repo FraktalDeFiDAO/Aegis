@@ -53,6 +53,20 @@ func TestExtract_HTTPError(t *testing.T) {
 	}
 }
 
+func TestExtract_DisallowPrivateTargets(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html></html>`))
+	}))
+	defer ts.Close()
+
+	e := NewExtractor(WithAllowPrivateHosts(false))
+	if _, err := e.Extract(ts.URL, nil); err == nil {
+		t.Fatal("expected private target to be rejected")
+	}
+}
+
 func TestResolveURL(t *testing.T) {
 	t.Parallel()
 

@@ -42,14 +42,14 @@ type PatternConfig struct {
 		VersionPattern string `yaml:"version_pattern"`
 	} `yaml:"frameworks"`
 	Payloads struct {
-		Basic            []string `yaml:"basic"`
-		EventHandlers    []string `yaml:"event_handlers"`
-		JavascriptProto  []string `yaml:"javascript_protocol"`
-		Encoded          []string `yaml:"encoded"`
-		TemplateInject   []string `yaml:"template_injection"`
-		DOMClobbering    []string `yaml:"dom_clobbering"`
-		FilterBypass     []string `yaml:"filter_bypass"`
-		Polyglot         []string `yaml:"polyglot"`
+		Basic           []string `yaml:"basic"`
+		EventHandlers   []string `yaml:"event_handlers"`
+		JavascriptProto []string `yaml:"javascript_protocol"`
+		Encoded         []string `yaml:"encoded"`
+		TemplateInject  []string `yaml:"template_injection"`
+		DOMClobbering   []string `yaml:"dom_clobbering"`
+		FilterBypass    []string `yaml:"filter_bypass"`
+		Polyglot        []string `yaml:"polyglot"`
 	} `yaml:"payloads"`
 }
 
@@ -576,14 +576,14 @@ func (a *DOMXSSAnalyzer) getTestPayloads() map[string][]string {
 	}
 
 	return map[string][]string{
-		"basic":             a.config.Payloads.Basic,
-		"event_handlers":    a.config.Payloads.EventHandlers,
+		"basic":               a.config.Payloads.Basic,
+		"event_handlers":      a.config.Payloads.EventHandlers,
 		"javascript_protocol": a.config.Payloads.JavascriptProto,
-		"encoded":           a.config.Payloads.Encoded,
-		"template_injection": a.config.Payloads.TemplateInject,
-		"dom_clobbering":    a.config.Payloads.DOMClobbering,
-		"filter_bypass":     a.config.Payloads.FilterBypass,
-		"polyglot":          a.config.Payloads.Polyglot,
+		"encoded":             a.config.Payloads.Encoded,
+		"template_injection":  a.config.Payloads.TemplateInject,
+		"dom_clobbering":      a.config.Payloads.DOMClobbering,
+		"filter_bypass":       a.config.Payloads.FilterBypass,
+		"polyglot":            a.config.Payloads.Polyglot,
 	}
 }
 
@@ -629,11 +629,11 @@ func (a *DOMXSSAnalyzer) calculateFlows(report *DOMXSSReport) {
 				} else {
 					confidence = "LOW"
 				}
-                
-                // Heuristic: If they are on the same line, it's very likely a direct flow
-                if distance == 0 {
-                    confidence = "CRITICAL"
-                }
+
+				// Heuristic: If they are on the same line, it's very likely a direct flow
+				if distance == 0 {
+					confidence = "CRITICAL"
+				}
 
 				// Only keep high/medium confidence flows
 				if confidence == "CRITICAL" || confidence == "HIGH" || confidence == "MEDIUM" {

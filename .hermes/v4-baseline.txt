@@ -1,0 +1,28 @@
+# V4 Baseline Metrics
+Date: 2026-07-12T08:44:20-05:00
+Branch: audit/v4-comprehensive-remediation-2026-07-12
+HEAD: 0c2856e
+
+## Test Files
+- 318 *_test.go files found
+
+## Code Markers
+- 0 actionable TODO/FIXME/STUB/HACK in source (3 hits are scanner pattern definitions)
+
+## Go Toolchain
+- Container: go1.24.3 linux/amd64
+- go.mod directive: go 1.25
+- Discrepancy noted: container is 1.24.3, not 1.25
+
+## Audit State
+- 31 CRITICAL, 35 HIGH, 17 MEDIUM, 11 LOW, 15 INFO (109 total + 6 overlaps) from v4 subagent audit
+- 10 documented SPEC §3 backlog items (B-1 through B-10)
+
+## Quality Gates (to be run)
+- gofmt -l cmd internal
+- go vet ./...
+- go build ./...
+- go test -count=1 -race ./...
+- golangci-lint (CI)
+- gosec no HIGH+ (CI)
+- coverage >= 80% on internal/** (CI)

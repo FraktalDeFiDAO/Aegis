@@ -381,6 +381,7 @@ func fetchHTML(ctx context.Context, u string, maxBytes int64, insecure bool, ua 
 			tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 		}
 		client = &http.Client{
+			Timeout:   30 * time.Second,
 			Transport: tr,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				if len(via) >= 10 {

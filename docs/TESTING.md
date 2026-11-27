@@ -1,38 +1,53 @@
-# Aegis Testing Documentation
+# Testing Aegis
 
-## 1. Overview
-Aegis uses a multi-layered testing strategy to ensure reliability and security:
-- **Unit Tests:** Isolate individual functions and packages.
-- **Integration Tests:** Verify communication between the Crawler and Scanner.
-- **API Tests:** Ensure the REST interface behaves predictably.
-- **Security Tests:** Validate regex patterns against known vulnerability signatures.
+## Local test gate
 
-## 2. Running Tests
-To run all tests locally:
+Use Podman because the host may not have Go installed:
+
 ```bash
-go test -v ./...
+podman run --rm --userns keep-id \
+  -v "$(pwd):/workspace" -w /workspace \
+  -e GOCACHE=/workspace/.cache/go-build \
+  -e GOMODCACHE=/workspace/.cache/gomod \
+  docker.io/library/golang:1.25-bookworm bash -c '
+    gofmt -l cmd internal
+    go vet ./...
+    go build ./...
+    go test -count=1 ./...
+  '
 ```
 
-To check code coverage:
+Release gate adds race detector:
+
 ```bash
-go test -coverprofile=coverage.out ./...
-go tool cover -html=coverage.out
+./scripts/go-run.sh go test -count=1 -race ./...
 ```
 
-## 3. Test Structure
-- `internal/crawler/crawler_test.go`: Browser automation and link extraction logic.
-- `internal/scanner/scanner_test.go`: Secret detection and vulnerability pattern matching.
-- `internal/session/session_test.go`: Encrypted session persistence.
-- `internal/recon/recon_test.go`: Web2/Web3 artifact discovery.
-- `internal/api/api_test.go`: HTTP endpoint handlers.
-- `internal/integration_test.go`: Full-stack "crawl-then-scan" workflow.
+## Detector false-positive gates
 
-## 4. CI/CD Integration
-Tests are automatically executed on every push to `main` or `develop` via Woodpecker CI.
-The pipeline includes:
-1. **Linting:** `golangci-lint`
-2. **Security Scan:** `gosec`
-3. **Unit & Integration Tests:** `go test` with race detection.
+Every detector in `internal/scanner`, `internal/owasp25`, `internal/xss`, and
+`internal/waf` must have:
 
-## 5. Coverage Thresholds
-Aegis aims for a minimum of **80% code coverage** across all internal packages. Failure to meet this threshold will trigger a warning in the CI pipeline.
+1. Positive test: known-vulnerable input produces findings
+2. Negative test: realistic safe input produces no findings
+3. Edge-case test: empty, huge, unicode, binary, and truncated input does not panic
+
+A detector without all three test types is not considered complete.
+
+## Determinism gates
+
+- Crawler: same config and same mock server must produce the same page set
+- Session: same encrypted session and key must round-trip through a fresh manager
+- API: `/health`, `/crawl`, auth, malformed JSON, rate limit, and dump quota must be contract-tested
+
+## Network tests
+
+Network-dependent tests must be skippable in offline CI. Prefer `httptest.NewServer`
+for unit and integration tests. External targets such as `scanme.nmap.org` should be
+used only in explicitly marked integration tests.
+
+## Coverage target
+
+CI target: 80% branch coverage on `internal/**`. If a package cannot reasonably hit
+80% because it wraps Rod/Chromium or external network behavior, add focused mockable
+units rather than lowering the global target.

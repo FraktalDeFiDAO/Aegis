@@ -3,9 +3,12 @@
 package intel
 
 import (
+	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/coppertone/bug-hunter/app/aegis/internal/logger"
 )
@@ -19,9 +22,10 @@ type ThreatFeed struct {
 // IntelManager coordinates the lifecycle of threat intelligence data,
 // including fetching, caching, and querying.
 type IntelManager struct {
-	feeds []ThreatFeed
-	cache sync.Map
-	log   *logger.Logger
+	feeds      []ThreatFeed
+	cache      sync.Map
+	log        *logger.Logger
+	httpClient *http.Client
 }
 
 // NewIntelManager initializes an IntelManager with default threat feeds.
@@ -31,27 +35,42 @@ func NewIntelManager() *IntelManager {
 		feeds: []ThreatFeed{
 			{Name: "URLHaus", URL: "https://urlhaus.abuse.ch/api/v1/urls/recent/"},
 		},
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{},
+			},
+		},
 	}
 }
 
 // FetchUpdates synchronizes the local cache with the latest data from
-// all registered threat feeds.
+// all registered threat feeds. It returns an error if any feed fails to fetch
+// or decode, while still attempting remaining feeds and caching successful ones.
 func (m *IntelManager) FetchUpdates() error {
+	var errs []error
 	for _, feed := range m.feeds {
 		m.log.Info("Fetching threat intel", "feed", feed.Name)
-		resp, err := http.Get(feed.URL)
+		resp, err := m.httpClient.Get(feed.URL)
 		if err != nil {
 			m.log.Error("Failed to fetch feed", "feed", feed.Name, "error", err)
+			errs = append(errs, fmt.Errorf("fetch %s: %w", feed.Name, err))
 			continue
 		}
-		defer resp.Body.Close()
 
-		// Simplified processing: store raw response in cache
+		// Decode and close response body immediately to prevent resource leaks
 		var data interface{}
-		if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-			return err
+		decodeErr := json.NewDecoder(resp.Body).Decode(&data)
+		resp.Body.Close()
+		if decodeErr != nil {
+			m.log.Error("Failed to decode feed", "feed", feed.Name, "error", decodeErr)
+			errs = append(errs, fmt.Errorf("decode %s: %w", feed.Name, decodeErr))
+			continue
 		}
 		m.cache.Store(feed.Name, data)
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("intel update errors: %d feed(s) failed", len(errs))
 	}
 	return nil
 }
@@ -74,18 +93,27 @@ func (m *IntelManager) IsMalicious(targetURL string) bool {
 }
 
 func containsTarget(value interface{}, target string) bool {
+	return containsTargetDepth(value, target, 0)
+}
+
+// containsTargetDepth recursively searches nested structures for target string,
+// limited to max 10 levels deep to prevent stack overflow on malicious input.
+func containsTargetDepth(value interface{}, target string, depth int) bool {
+	if depth > 10 {
+		return false
+	}
 	switch v := value.(type) {
 	case string:
 		return v == target
 	case []interface{}:
 		for _, item := range v {
-			if containsTarget(item, target) {
+			if containsTargetDepth(item, target, depth+1) {
 				return true
 			}
 		}
 	case map[string]interface{}:
 		for _, item := range v {
-			if containsTarget(item, target) {
+			if containsTargetDepth(item, target, depth+1) {
 				return true
 			}
 		}

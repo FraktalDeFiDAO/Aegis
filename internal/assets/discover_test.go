@@ -73,6 +73,23 @@ func TestDiscover_HTTPError(t *testing.T) {
 	}
 }
 
+func TestDiscover_DisallowPrivateTargets(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html></html>`))
+	}))
+	defer ts.Close()
+
+	d, err := NewDiscoverer(WithAllowPrivateHosts(false))
+	if err != nil {
+		t.Fatalf("NewDiscoverer returned error: %v", err)
+	}
+	if _, err := d.Discover(ts.URL); err == nil {
+		t.Fatal("expected private target to be rejected")
+	}
+}
+
 func TestHelpersAndReport(t *testing.T) {
 	t.Parallel()
 

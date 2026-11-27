@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/coppertone/bug-hunter/app/aegis/internal/ato"
@@ -31,36 +32,36 @@ type Workflow struct {
 
 // Step represents a single step in the workflow
 type Step struct {
-	ID          string            `json:"id" yaml:"id"`
-	Name        string            `json:"name" yaml:"name"`
-	Type        StepType          `json:"type" yaml:"type"`
-	Config      StepConfig        `json:"config,omitempty" yaml:"config,omitempty"`
-	Condition   string            `json:"condition,omitempty" yaml:"condition,omitempty"`
-	ContinueOn  string            `json:"continue_on,omitempty" yaml:"continue_on,omitempty"` // "success", "failure", "always"
-	Timeout     string            `json:"timeout,omitempty" yaml:"timeout,omitempty"`
-	Retry       *RetryConfig      `json:"retry,omitempty" yaml:"retry,omitempty"`
-	DependsOn   []string          `json:"depends_on,omitempty" yaml:"depends_on,omitempty"`
-	Variables   map[string]string `json:"variables,omitempty" yaml:"variables,omitempty"`
+	ID         string            `json:"id" yaml:"id"`
+	Name       string            `json:"name" yaml:"name"`
+	Type       StepType          `json:"type" yaml:"type"`
+	Config     StepConfig        `json:"config,omitempty" yaml:"config,omitempty"`
+	Condition  string            `json:"condition,omitempty" yaml:"condition,omitempty"`
+	ContinueOn string            `json:"continue_on,omitempty" yaml:"continue_on,omitempty"` // "success", "failure", "always"
+	Timeout    string            `json:"timeout,omitempty" yaml:"timeout,omitempty"`
+	Retry      *RetryConfig      `json:"retry,omitempty" yaml:"retry,omitempty"`
+	DependsOn  []string          `json:"depends_on,omitempty" yaml:"depends_on,omitempty"`
+	Variables  map[string]string `json:"variables,omitempty" yaml:"variables,omitempty"`
 }
 
 // StepType represents the type of step
 type StepType string
 
 const (
-	StepTypeScan       StepType = "scan"
-	StepTypeWAFDetect  StepType = "waf_detect"
-	StepTypeATOCheck   StepType = "ato_check"
-	StepTypeCrawl      StepType = "crawl"
-	StepTypeXSS        StepType = "xss"
-	StepTypeInject     StepType = "inject"
-	StepTypeExtract    StepType = "extract"
-	StepTypeValidate   StepType = "validate"
-	StepTypeReport     StepType = "report"
-	StepTypeNotify     StepType = "notify"
-	StepTypeScript     StepType = "script"
-	StepTypeWait       StepType = "wait"
-	StepTypeLoop       StepType = "loop"
-	StepTypeParallel   StepType = "parallel"
+	StepTypeScan      StepType = "scan"
+	StepTypeWAFDetect StepType = "waf_detect"
+	StepTypeATOCheck  StepType = "ato_check"
+	StepTypeCrawl     StepType = "crawl"
+	StepTypeXSS       StepType = "xss"
+	StepTypeInject    StepType = "inject"
+	StepTypeExtract   StepType = "extract"
+	StepTypeValidate  StepType = "validate"
+	StepTypeReport    StepType = "report"
+	StepTypeNotify    StepType = "notify"
+	StepTypeScript    StepType = "script"
+	StepTypeWait      StepType = "wait"
+	StepTypeLoop      StepType = "loop"
+	StepTypeParallel  StepType = "parallel"
 )
 
 // StepConfig holds configuration for a step
@@ -70,16 +71,16 @@ type StepConfig struct {
 	Targets []string `json:"targets,omitempty" yaml:"targets,omitempty"`
 
 	// Scan options
-	ScanType      string   `json:"scan_type,omitempty" yaml:"scan_type,omitempty"`
-	MaxPages      int      `json:"max_pages,omitempty" yaml:"max_pages,omitempty"`
-	MaxDepth      int      `json:"max_depth,omitempty" yaml:"max_depth,omitempty"`
-	Workers       int      `json:"workers,omitempty" yaml:"workers,omitempty"`
-	Timeout       string   `json:"timeout,omitempty" yaml:"timeout,omitempty"`
+	ScanType string `json:"scan_type,omitempty" yaml:"scan_type,omitempty"`
+	MaxPages int    `json:"max_pages,omitempty" yaml:"max_pages,omitempty"`
+	MaxDepth int    `json:"max_depth,omitempty" yaml:"max_depth,omitempty"`
+	Workers  int    `json:"workers,omitempty" yaml:"workers,omitempty"`
+	Timeout  string `json:"timeout,omitempty" yaml:"timeout,omitempty"`
 
 	// WAF options
-	WAFBypass      bool     `json:"waf_bypass,omitempty" yaml:"waf_bypass,omitempty"`
-	WAFType        string   `json:"waf_type,omitempty" yaml:"waf_type,omitempty"`
-	EncodingLevel  int      `json:"encoding_level,omitempty" yaml:"encoding_level,omitempty"`
+	WAFBypass     bool   `json:"waf_bypass,omitempty" yaml:"waf_bypass,omitempty"`
+	WAFType       string `json:"waf_type,omitempty" yaml:"waf_type,omitempty"`
+	EncodingLevel int    `json:"encoding_level,omitempty" yaml:"encoding_level,omitempty"`
 
 	// XSS options
 	ElementFocus   []string `json:"element_focus,omitempty" yaml:"element_focus,omitempty"`
@@ -94,10 +95,10 @@ type StepConfig struct {
 	SessionFile     string            `json:"session_file,omitempty" yaml:"session_file,omitempty"`
 
 	// Inject options
-	Selector  string   `json:"selector,omitempty" yaml:"selector,omitempty"`
-	Payload   string   `json:"payload,omitempty" yaml:"payload,omitempty"`
-	Payloads  []string `json:"payloads,omitempty" yaml:"payloads,omitempty"`
-	Event     string   `json:"event,omitempty" yaml:"event,omitempty"`
+	Selector string   `json:"selector,omitempty" yaml:"selector,omitempty"`
+	Payload  string   `json:"payload,omitempty" yaml:"payload,omitempty"`
+	Payloads []string `json:"payloads,omitempty" yaml:"payloads,omitempty"`
+	Event    string   `json:"event,omitempty" yaml:"event,omitempty"`
 
 	// Extract options
 	Patterns []string `json:"patterns,omitempty" yaml:"patterns,omitempty"`
@@ -109,9 +110,9 @@ type StepConfig struct {
 	Template string `json:"template,omitempty" yaml:"template,omitempty"`
 
 	// Notify options
-	Webhook  string `json:"webhook,omitempty" yaml:"webhook,omitempty"`
-	Email    string `json:"email,omitempty" yaml:"email,omitempty"`
-	Slack    string `json:"slack,omitempty" yaml:"slack,omitempty"`
+	Webhook string `json:"webhook,omitempty" yaml:"webhook,omitempty"`
+	Email   string `json:"email,omitempty" yaml:"email,omitempty"`
+	Slack   string `json:"slack,omitempty" yaml:"slack,omitempty"`
 
 	// Script options
 	Script  string   `json:"script,omitempty" yaml:"script,omitempty"`
@@ -134,15 +135,15 @@ type StepConfig struct {
 
 // RetryConfig holds retry configuration
 type RetryConfig struct {
-	MaxAttempts int    `json:"max_attempts" yaml:"max_attempts"`
-	Delay       string `json:"delay,omitempty" yaml:"delay,omitempty"`
+	MaxAttempts int     `json:"max_attempts" yaml:"max_attempts"`
+	Delay       string  `json:"delay,omitempty" yaml:"delay,omitempty"`
 	BackoffMult float64 `json:"backoff_mult,omitempty" yaml:"backoff_mult,omitempty"`
 }
 
 // Action represents an action to take on workflow events
 type Action struct {
-	Type    string            `json:"type" yaml:"type"`
-	Config  map[string]string `json:"config,omitempty" yaml:"config,omitempty"`
+	Type   string            `json:"type" yaml:"type"`
+	Config map[string]string `json:"config,omitempty" yaml:"config,omitempty"`
 }
 
 // OutputConfig holds output configuration
@@ -181,6 +182,7 @@ type Runner struct {
 	ctx      context.Context
 	results  []StepResult
 	vars     map[string]interface{}
+	varMu    sync.RWMutex
 	verbose  bool
 }
 
@@ -194,7 +196,7 @@ func NewRunner(workflow *Workflow, opts ...RunnerOption) *Runner {
 
 	// Copy workflow variables
 	for k, v := range workflow.Variables {
-		r.vars[k] = v
+		r.setVar(k, v)
 	}
 
 	for _, opt := range opts {
@@ -218,7 +220,7 @@ func WithVerbose(verbose bool) RunnerOption {
 func WithVariables(vars map[string]string) RunnerOption {
 	return func(r *Runner) {
 		for k, v := range vars {
-			r.vars[k] = v
+			r.setVar(k, v)
 		}
 	}
 }
@@ -389,8 +391,8 @@ func (r *Runner) executeStep(step Step) StepResult {
 
 	// Store output in variables
 	if step.ID != "" && output != nil {
-		r.vars[step.ID+"_output"] = output
-		r.vars[step.ID+"_status"] = result.Status
+		r.setVar(step.ID+"_output", output)
+		r.setVar(step.ID+"_status", result.Status)
 	}
 
 	if r.verbose {
@@ -403,7 +405,7 @@ func (r *Runner) executeStep(step Step) StepResult {
 
 func (r *Runner) checkDependencies(deps []string) bool {
 	for _, dep := range deps {
-		status, ok := r.vars[dep+"_status"]
+		status, ok := r.getVar(dep + "_status")
 		if !ok || status != "success" {
 			return false
 		}
@@ -475,10 +477,10 @@ func (r *Runner) executeWAFDetect(ctx context.Context, config StepConfig) (inter
 	}
 
 	result := map[string]interface{}{
-		"target":           target,
-		"waf_type":         detection.WAFType.String(),
-		"confidence":       detection.Confidence,
-		"evidence":         detection.Evidence,
+		"target":            target,
+		"waf_type":          detection.WAFType.String(),
+		"confidence":        detection.Confidence,
+		"evidence":          detection.Evidence,
 		"bypass_strategies": waf.GetBypassStrategies(detection.WAFType),
 	}
 
@@ -643,7 +645,7 @@ func (r *Runner) executeReport(ctx context.Context, config StepConfig) (interfac
 
 	// Collect all findings from previous steps
 	allFindings := make(map[string]interface{})
-	for key, val := range r.vars {
+	for key, val := range r.snapshotVars() {
 		if strings.HasSuffix(key, "_output") {
 			allFindings[strings.TrimSuffix(key, "_output")] = val
 		}
@@ -713,7 +715,7 @@ func (r *Runner) executeLoop(ctx context.Context, step Step) (interface{}, error
 
 	items := step.Config.Items
 	if step.Config.ItemsRef != "" {
-		if v, ok := r.vars[step.Config.ItemsRef]; ok {
+		if v, ok := r.getVar(step.Config.ItemsRef); ok {
 			if arr, ok := v.([]string); ok {
 				items = arr
 			}
@@ -721,7 +723,7 @@ func (r *Runner) executeLoop(ctx context.Context, step Step) (interface{}, error
 	}
 
 	for _, item := range items {
-		r.vars["loop_item"] = item
+		r.setVar("loop_item", item)
 		for _, subStep := range step.Config.SubSteps {
 			result := r.executeStep(subStep)
 			results = append(results, result)
@@ -782,7 +784,7 @@ func (r *Runner) resolveVariable(s string) string {
 	}
 
 	result := s
-	for key, val := range r.vars {
+	for key, val := range r.snapshotVars() {
 		placeholder := "{{" + key + "}}"
 		if strVal, ok := val.(string); ok {
 			result = strings.ReplaceAll(result, placeholder, strVal)
@@ -790,6 +792,30 @@ func (r *Runner) resolveVariable(s string) string {
 	}
 
 	return result
+}
+
+func (r *Runner) getVar(key string) (interface{}, bool) {
+	r.varMu.RLock()
+	defer r.varMu.RUnlock()
+	value, ok := r.vars[key]
+	return value, ok
+}
+
+func (r *Runner) setVar(key string, value interface{}) {
+	r.varMu.Lock()
+	defer r.varMu.Unlock()
+	r.vars[key] = value
+}
+
+func (r *Runner) snapshotVars() map[string]interface{} {
+	r.varMu.RLock()
+	defer r.varMu.RUnlock()
+
+	snapshot := make(map[string]interface{}, len(r.vars))
+	for key, val := range r.vars {
+		snapshot[key] = val
+	}
+	return snapshot
 }
 
 // parseWAFType converts a string to waf.WAFType

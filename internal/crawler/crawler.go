@@ -4,6 +4,7 @@ package crawler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/coppertone/bug-hunter/app/aegis/internal/browser"
+	"github.com/coppertone/bug-hunter/app/aegis/internal/connector"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/logger"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/rendercheck"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/scrape"
@@ -30,26 +32,34 @@ import (
 // Config holds the crawler configuration settings including target,
 // depth limits, and artifact capture options.
 type Config struct {
-	Target             string `yaml:"target"`             // Initial URL to start crawling from
-	MaxDepth           int    `yaml:"maxDepth"`           // Maximum recursion depth for link discovery
-	MaxPages           int    `yaml:"maxPages"`           // Maximum number of pages to crawl (0 = unlimited)
-	UserAgent          string `yaml:"userAgent"`          // Custom User-Agent string for the browser
-	Headless           bool   `yaml:"headless"`           // Whether to run browser in headless mode
-	Scroll             bool   `yaml:"scroll"`             // Enable scrolling to trigger lazy loading
-	WorkerCount        int    `yaml:"workerCount"`        // Number of concurrent worker goroutines
-	IncludeExternal    bool   `yaml:"includeExternal"`    // Allow crawling external domains
-	RenderVerify       string `yaml:"renderVerify"`       // Render verification mode: auto, never, always
-	RenderBorderLow    int    `yaml:"renderBorderLow"`    // Rendercheck borderline low score
-	RenderBorderHigh   int    `yaml:"renderBorderHigh"`   // Rendercheck borderline high score
-	RenderTextDeltaMin int    `yaml:"renderTextDeltaMin"` // Rendercheck visible text delta threshold
-	RenderMaxBytes     int64  `yaml:"renderMaxBytes"`     // Rendercheck/static HTML max bytes
-	ScreenshotPath     string `yaml:"screenshotPath"`     // Directory to save screenshots
-	DownloadPath       string `yaml:"downloadPath"`       // Directory to save downloaded files
-	EnableScreenshot   bool   `yaml:"enableScreenshot"`   // Global toggle for screenshot capture
-	EnableDownload     bool   `yaml:"enableDownload"`     // Global toggle for file downloads
-	AllowPrivateHosts  bool   `yaml:"allowPrivateHosts"`  // Allow localhost/private IP targets
-	PageTimeoutSeconds int    `yaml:"pageTimeoutSeconds"` // Page operation timeout in seconds
-	SessionKey         []byte `yaml:"sessionKey"`         // 32-byte AES-256 key for session storage
+	Target             string                  `yaml:"target"`             // Initial URL to start crawling from
+	MaxDepth           int                     `yaml:"maxDepth"`           // Maximum recursion depth for link discovery
+	MaxPages           int                     `yaml:"maxPages"`           // Maximum number of pages to crawl (0 = unlimited)
+	UserAgent          string                  `yaml:"userAgent"`          // Custom User-Agent string for the browser
+	Headless           bool                    `yaml:"headless"`           // Whether to run browser in headless mode
+	Scroll             bool                    `yaml:"scroll"`             // Enable scrolling to trigger lazy loading
+	WorkerCount        int                     `yaml:"workerCount"`        // Number of concurrent worker goroutines
+	IncludeExternal    bool                    `yaml:"includeExternal"`    // Allow crawling external domains
+	RenderVerify       string                  `yaml:"renderVerify"`       // Render verification mode: auto, never, always
+	RenderBorderLow    int                     `yaml:"renderBorderLow"`    // Rendercheck borderline low score
+	RenderBorderHigh   int                     `yaml:"renderBorderHigh"`   // Rendercheck borderline high score
+	RenderTextDeltaMin int                     `yaml:"renderTextDeltaMin"` // Rendercheck visible text delta threshold
+	RenderMaxBytes     int64                   `yaml:"renderMaxBytes"`     // Rendercheck/static HTML max bytes
+	ScreenshotPath     string                  `yaml:"screenshotPath"`     // Directory to save screenshots
+	DownloadPath       string                  `yaml:"downloadPath"`       // Directory to save downloaded files
+	EnableScreenshot   bool                    `yaml:"enableScreenshot"`   // Global toggle for screenshot capture
+	EnableDownload     bool                    `yaml:"enableDownload"`     // Global toggle for file downloads
+	AllowPrivateHosts  bool                    `yaml:"allowPrivateHosts"`  // Allow localhost/private IP targets
+	PageTimeoutSeconds int                     `yaml:"pageTimeoutSeconds"` // Page operation timeout in seconds
+	SessionKey         []byte                  `yaml:"sessionKey"`         // 32-byte AES-256 key for session storage
+	ConnectorMode      bool                    `yaml:"connectorMode"`      // Use user's browser via extension
+	BridgeURL          string                  `yaml:"bridgeURL"`          // WebSocket URL of bridge server
+	BridgeToken        string                  `yaml:"-" json:"-"`         // In-memory bridge credential; never serialized
+	BridgeDiscovery    func() (string, string) `yaml:"-" json:"-"`         // Refresh URL/credential after bridge restart
+	CaptureConsole     bool                    `yaml:"captureConsole"`     // Capture console/page errors (connector, best-effort)
+	CaptureNetwork     bool                    `yaml:"captureNetwork"`     // Capture network metadata (connector, best-effort)
+	CapturePageState   bool                    `yaml:"capturePageState"`   // Capture bounded page snapshots (connector, best-effort)
+	CaptureDir         string                  `yaml:"captureDir"`         // Directory for capture artifacts
 }
 
 // Crawler represents an authenticated web crawler instance that manages
@@ -64,12 +74,44 @@ type Crawler struct {
 	downloads   sync.Map
 	store       *crawlStore
 	browserMu   sync.Mutex
+	connector   *connector.Connector // when connectorMode is true
 }
 
 func (c *Crawler) getBrowser() (*rod.Browser, error) {
 	c.browserMu.Lock()
 	defer c.browserMu.Unlock()
 
+	// Connector mode: use user's browser via extension
+	if c.config.ConnectorMode {
+		if c.connector != nil {
+			// Already connected, verify connection is alive
+			_, err := c.connector.Pages()
+			if err == nil {
+				return nil, nil // connector mode returns nil rod.Browser
+			}
+			c.log.Warn("Extension connection lost, reconnecting...")
+			c.connector.Close()
+			c.connector = nil
+		}
+
+		var err error
+		if c.config.BridgeURL != "" {
+			c.connector, err = connector.Connect(c.config.BridgeURL, connector.WithToken(c.config.BridgeToken), connector.WithReconnectDiscovery(c.config.BridgeDiscovery))
+		} else {
+			var addr string
+			c.connector, addr, err = connector.ConnectWithBridge("127.0.0.1")
+			if err == nil {
+				c.log.Info("bridge server started", "addr", addr)
+			}
+		}
+		if err != nil {
+			return nil, fmt.Errorf("connect via extension: %w", err)
+		}
+		c.log.Info("connected to user's browser via extension")
+		return nil, nil
+	}
+
+	// Default mode: launch Chromium
 	if c.browser != nil {
 		// Check if connection is still alive
 		_, err := c.browser.Pages()
@@ -264,8 +306,9 @@ func (c *Crawler) Run(dumpPath string) error {
 
 	jar, _ := cookiejar.New(nil)
 	c.client = &http.Client{
-		Timeout: time.Duration(c.config.PageTimeoutSeconds) * time.Second,
-		Jar:     jar,
+		Timeout:       time.Duration(c.config.PageTimeoutSeconds) * time.Second,
+		Jar:           jar,
+		CheckRedirect: validator.RedirectPolicy(c.config.AllowPrivateHosts),
 	}
 	c.applySessionCookies()
 
@@ -359,112 +402,132 @@ func (c *Crawler) processPage(urlStr string, depth int, dumpPath string) (links 
 		defer cancel()
 	}
 
-	useRod := c.config.EnableScreenshot
-	if !useRod && c.sessionPath != "" {
-		if _, err := os.Stat(c.sessionPath); err == nil {
-			useRod = true
-		}
-	}
-	if !useRod {
-		useRod = c.shouldRenderWithRod(ctx, urlStr)
-	}
-
 	var content string
-	if !useRod {
-		htmlContent, fetchErr := c.fetchHTML(ctx, urlStr)
-		if fetchErr != nil {
-			c.recordError(urlStr, "fetch_html", fetchErr)
-			useRod = true
-		} else {
+	if c.config.ConnectorMode {
+		if c.connector == nil {
+			if _, err := c.getBrowser(); err != nil {
+				wrapped := fmt.Errorf("connector init: %w", err)
+				c.recordError(urlStr, "connector_init", wrapped)
+				return nil, wrapped
+			}
+		}
+		if c.connector != nil {
+			htmlContent, connErr := c.processPageWithConnector(urlStr, dumpPath)
+			if connErr != nil {
+				c.recordError(urlStr, "connector", connErr)
+				return nil, connErr
+			}
 			content = htmlContent
 		}
 	}
 
-	if useRod {
-		b, err := c.getBrowser()
-		if err != nil {
-			wrapped := fmt.Errorf("get browser: %w", err)
-			c.recordError(urlStr, "get_browser", wrapped)
-			return nil, wrapped
-		}
-		page, err := b.Page(proto.TargetCreateTarget{})
-		if err != nil {
-			wrapped := fmt.Errorf("create page: %w", err)
-			c.recordError(urlStr, "create_page", wrapped)
-			return nil, wrapped
-		}
-		if c.config.PageTimeoutSeconds > 0 {
-			page = page.Timeout(time.Duration(c.config.PageTimeoutSeconds) * time.Second)
-		}
-		defer page.Close()
-
-		// Load session if available
-		if c.sessionPath != "" {
+	if content == "" {
+		useRod := c.config.EnableScreenshot
+		if !useRod && c.sessionPath != "" {
 			if _, err := os.Stat(c.sessionPath); err == nil {
-				if len(c.config.SessionKey) == 0 {
-					c.log.Warn("session key missing; skipping session load")
-				} else {
-					mgr := session.NewSessionManager(c.sessionPath, c.config.SessionKey)
-					if err := mgr.Load(page); err != nil {
-						c.log.Error("failed to load session", "error", err)
+				useRod = true
+			}
+		}
+		if !useRod {
+			useRod = c.shouldRenderWithRod(ctx, urlStr)
+		}
+
+		if !useRod {
+			htmlContent, fetchErr := c.fetchHTML(ctx, urlStr)
+			if fetchErr != nil {
+				c.recordError(urlStr, "fetch_html", fetchErr)
+				useRod = true
+			} else {
+				content = htmlContent
+			}
+		}
+
+		if useRod {
+			b, err := c.getBrowser()
+			if err != nil {
+				wrapped := fmt.Errorf("get browser: %w", err)
+				c.recordError(urlStr, "get_browser", wrapped)
+				return nil, wrapped
+			}
+			page, err := b.Page(proto.TargetCreateTarget{})
+			if err != nil {
+				wrapped := fmt.Errorf("create page: %w", err)
+				c.recordError(urlStr, "create_page", wrapped)
+				return nil, wrapped
+			}
+			if c.config.PageTimeoutSeconds > 0 {
+				page = page.Timeout(time.Duration(c.config.PageTimeoutSeconds) * time.Second)
+			}
+			defer page.Close()
+
+			// Load session if available
+			if c.sessionPath != "" {
+				if _, err := os.Stat(c.sessionPath); err == nil {
+					if len(c.config.SessionKey) == 0 {
+						c.log.Warn("session key missing; skipping session load")
+					} else {
+						mgr := session.NewSessionManager(c.sessionPath, c.config.SessionKey)
+						if err := mgr.Load(page); err != nil {
+							c.log.Error("failed to load session", "error", err)
+						}
 					}
 				}
 			}
-		}
 
-		if c.config.UserAgent != "" {
-			err := page.SetUserAgent(&proto.NetworkSetUserAgentOverride{
-				UserAgent: c.config.UserAgent,
-			})
-			if err != nil {
-				c.log.Warn("failed to set user agent", "error", err)
+			if c.config.UserAgent != "" {
+				err := page.SetUserAgent(&proto.NetworkSetUserAgentOverride{
+					UserAgent: c.config.UserAgent,
+				})
+				if err != nil {
+					c.log.Warn("failed to set user agent", "error", err)
+				}
 			}
-		}
 
-		// Navigate and wait for load
-		if err := page.Navigate(urlStr); err != nil {
-			wrapped := fmt.Errorf("navigate: %w", err)
-			c.recordError(urlStr, "navigate", wrapped)
-			return nil, wrapped
-		}
-		if err := page.WaitLoad(); err != nil {
-			wrapped := fmt.Errorf("wait load: %w", err)
-			c.recordError(urlStr, "wait_load", wrapped)
-			return nil, wrapped
-		}
-		if c.client != nil {
-			c.syncCookies(page, urlStr)
-		}
-
-		if c.config.Scroll {
-			c.scrollToBottom(page)
+			// Navigate and wait for load
+			if err := page.Navigate(urlStr); err != nil {
+				wrapped := fmt.Errorf("navigate: %w", err)
+				c.recordError(urlStr, "navigate", wrapped)
+				return nil, wrapped
+			}
+			if err := page.WaitLoad(); err != nil {
+				wrapped := fmt.Errorf("wait load: %w", err)
+				c.recordError(urlStr, "wait_load", wrapped)
+				return nil, wrapped
+			}
 			if c.client != nil {
 				c.syncCookies(page, urlStr)
 			}
-		}
 
-		// Capture Screenshot
-		if c.config.EnableScreenshot {
-			shotPath := filepath.Join(c.config.ScreenshotPath, generateFilename(urlStr, ".png"))
-			img, err := page.Screenshot(true, &proto.PageCaptureScreenshot{
-				Format: proto.PageCaptureScreenshotFormatPng,
-			})
-			if err == nil {
-				if err := os.WriteFile(shotPath, img, 0644); err != nil {
-					c.log.Error("failed to save screenshot", "error", err, "path", shotPath)
+			if c.config.Scroll {
+				c.scrollToBottom(page)
+				if c.client != nil {
+					c.syncCookies(page, urlStr)
 				}
-			} else {
-				c.log.Error("failed to capture screenshot", "error", err, "path", shotPath)
 			}
-		}
 
-		html, err := page.HTML()
-		if err != nil {
-			wrapped := fmt.Errorf("get html: %w", err)
-			c.recordError(urlStr, "get_html", wrapped)
-			return nil, wrapped
+			// Capture Screenshot
+			if c.config.EnableScreenshot {
+				shotPath := filepath.Join(c.config.ScreenshotPath, generateFilename(urlStr, ".png"))
+				img, err := page.Screenshot(true, &proto.PageCaptureScreenshot{
+					Format: proto.PageCaptureScreenshotFormatPng,
+				})
+				if err == nil {
+					if err := os.WriteFile(shotPath, img, 0644); err != nil {
+						c.log.Error("failed to save screenshot", "error", err, "path", shotPath)
+					}
+				} else {
+					c.log.Error("failed to capture screenshot", "error", err, "path", shotPath)
+				}
+			}
+
+			html, err := page.HTML()
+			if err != nil {
+				wrapped := fmt.Errorf("get html: %w", err)
+				c.recordError(urlStr, "get_html", wrapped)
+				return nil, wrapped
+			}
+			content = html
 		}
-		content = html
 	}
 
 	if content == "" {
@@ -663,6 +726,83 @@ func (c *Crawler) renderMaxBytes() int64 {
 		return c.config.RenderMaxBytes
 	}
 	return defaultMaxHTMLBytes
+}
+
+func (c *Crawler) processPageWithConnector(urlStr, dumpPath string) (string, error) {
+	if c.connector == nil {
+		return "", fmt.Errorf("connector not initialized")
+	}
+	page, err := c.connector.ConnectorPage(urlStr)
+	if err != nil {
+		return "", fmt.Errorf("connector page: %w", err)
+	}
+	if err := page.Navigate(urlStr); err != nil {
+		return "", fmt.Errorf("navigate: %w", err)
+	}
+	_ = page.WaitLoad()
+	if c.config.Scroll {
+		_, _ = page.SendRaw("scroll", map[string]int{"x": 0, "y": 1000000})
+		time.Sleep(300 * time.Millisecond)
+	}
+	html, err := page.HTML()
+	if err != nil {
+		return "", fmt.Errorf("get html: %w", err)
+	}
+	if c.config.EnableScreenshot {
+		shotDir := c.config.ScreenshotPath
+		if shotDir == "" {
+			shotDir = filepath.Join(dumpPath, "screenshots")
+		}
+		_ = os.MkdirAll(shotDir, 0755)
+		if img, err := page.Screenshot(true, nil); err == nil && len(img) > 0 {
+			shotPath := filepath.Join(shotDir, generateFilename(urlStr, ".png"))
+			_ = os.WriteFile(shotPath, img, 0644)
+		}
+	}
+	c.captureConnectorArtifacts(page, urlStr, dumpPath)
+	return html, nil
+}
+
+func (c *Crawler) captureConnectorArtifacts(page *connector.Page, urlStr, dumpPath string) {
+	if page == nil {
+		return
+	}
+	if !(c.config.CaptureConsole || c.config.CaptureNetwork || c.config.CapturePageState) {
+		return
+	}
+	dir := c.config.CaptureDir
+	if dir == "" {
+		dir = filepath.Join(dumpPath, "captures")
+	}
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return
+	}
+	base := strings.TrimSuffix(generateFilename(urlStr, ""), ".html")
+	if base == "" || base == "index" {
+		base = "page"
+	}
+	writeJSON := func(name string, v interface{}) {
+		b, err := json.MarshalIndent(v, "", "  ")
+		if err != nil {
+			return
+		}
+		_ = os.WriteFile(filepath.Join(dir, base+"."+name+".json"), b, 0644)
+	}
+	if c.config.CapturePageState {
+		if snap, err := page.Snapshot(map[string]interface{}{"maxChars": 20000}); err == nil {
+			writeJSON("page-state", map[string]interface{}{"url": urlStr, "snapshot": snap, "capturedAt": time.Now().UTC().Format(time.RFC3339)})
+		}
+	}
+	if c.config.CaptureConsole {
+		if v, err := page.DebugGetConsole(); err == nil {
+			writeJSON("console", map[string]interface{}{"url": urlStr, "console": v, "capturedAt": time.Now().UTC().Format(time.RFC3339)})
+		}
+	}
+	if c.config.CaptureNetwork {
+		if v, err := page.DebugGetNetwork(); err == nil {
+			writeJSON("network", map[string]interface{}{"url": urlStr, "network": v, "capturedAt": time.Now().UTC().Format(time.RFC3339)})
+		}
+	}
 }
 
 func (c *Crawler) handleAsset(fromPage string, rawURL string, origin string, dumpPath string) {

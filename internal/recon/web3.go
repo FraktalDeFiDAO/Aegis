@@ -11,7 +11,7 @@ import (
 var (
 	// ethAddrRegex matches Ethereum addresses (0x followed by 40 hex chars)
 	ethAddrRegex = regexp.MustCompile(`\b0x[a-fA-F0-9]{40}\b`)
-	
+
 	// ensRegex matches ENS names (something.eth)
 	ensRegex = regexp.MustCompile(`\b[a-zA-Z0-9-]+\.eth\b`)
 )

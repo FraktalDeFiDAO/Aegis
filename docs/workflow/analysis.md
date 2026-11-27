@@ -1,104 +1,88 @@
-# Bug Hunting Workflows
+# Analysis Workflow
 
-## Standard Analysis Workflow
+Aegis analysis is a single-target Go-native workflow:
 
-### 1. Target Acquisition
-- Acquire target application (URL, APK, binary, etc.)
-- Validate target accessibility
-- Determine target type (web2, web3, android, desktop)
-- Prepare analysis environment
-
-### 2. Pre-Analysis Setup
-- Select appropriate analyzer service
-- Configure analysis parameters
-- Set up authentication if needed
-- Initialize monitoring tools
-
-### 3. Static Analysis
-- Analyze source code/binary without execution
-- Identify potential vulnerabilities
-- Check for security misconfigurations
-- Scan for exposed secrets
-
-### 4. Dynamic Analysis (when applicable)
-- Execute application in sandboxed environment
-- Monitor runtime behavior
-- Test input validation
-- Analyze network traffic
-
-### 5. Vulnerability Correlation
-- Cross-reference findings from different tools
-- Eliminate false positives
-- Prioritize vulnerabilities by severity
-- Link related findings
-
-### 6. Report Generation
-- Compile findings into comprehensive report
-- Provide remediation recommendations
-- Create executive summary
-- Generate technical details
-
-## Automated Analysis Pipeline
-
-The system supports automated analysis through the following pipeline:
-
-```
-[Target Discovery] -> [Type Classification] -> [Analyzer Selection] -> [Analysis Execution] -> [Result Aggregation] -> [Report Delivery]
+```text
+1. Define target scope
+2. Capture authenticated browser session
+3. Crawl target with depth and scope limits
+4. Dump rendered/static content and assets
+5. Run scanners over the dump
+6. Generate findings report
+7. Optionally run ATO scenario or screenshot/render checks
 ```
 
-### Configuration Options
+## 1. Scope
 
-#### Analysis Depth
-- **Quick**: Surface-level scan focusing on common vulnerabilities
-- **Standard**: Comprehensive scan including custom rules
-- **Deep**: Exhaustive analysis with extended runtime
+Create or update a YAML config in `configs/`:
 
-#### Target Types
-- **Web2**: Traditional web applications
-- **Web3**: Decentralized applications and smart contracts
-- **Android**: Mobile applications
-- **Desktop**: Native applications
+```yaml
+target: https://example.local
+maxDepth: 3
+includeExternal: false
+allowPrivateHosts: false
+userAgent: "AegisBot/1.0"
+```
 
-## Custom Analysis Workflows
+Private/loopback scanning must be explicit via config.
 
-### Web Application Analysis
-1. Crawl application structure
-2. Identify authentication flows
-3. Map input vectors
-4. Test for common web vulnerabilities
-5. Analyze business logic
+## 2. Auth capture
 
-### Smart Contract Analysis
-1. Parse Solidity/EVM bytecode
-2. Check for common smart contract vulnerabilities
-3. Analyze economic incentives
-4. Validate access controls
-5. Test for reentrancy and other attacks
+```bash
+aegis auth --session ./session.enc --target-url https://example.local
+```
 
-### Mobile Application Analysis
-1. Static analysis of APK/IPA
-2. Check for insecure storage
-3. Analyze network communications
-4. Test for platform-specific vulnerabilities
-5. Review permissions and privacy settings
+The session is encrypted with AES-256-GCM and stored with owner-only permissions.
 
-### Desktop Application Analysis
-1. Binary analysis
-2. Check for buffer overflow vulnerabilities
-3. Analyze file system access
-4. Monitor network activity
-5. Test for privilege escalation
+## 3. Crawl
 
-## Integration Workflows
+```bash
+aegis crawl --config configs/config.yaml --dump ./dump --session ./session.enc
+```
 
-### CI/CD Integration
-- Automated scanning on code commits
-- Pull request security checks
-- Release gate analysis
-- Compliance verification
+Crawl output includes SQLite state, pages, assets, screenshots when enabled, and
+crawl errors. The crawler must stay in configured scope.
 
-### Incident Response
-- Rapid analysis of suspected vulnerable systems
-- Vulnerability verification
-- Impact assessment
-- Remediation guidance
+## 4. Scan
+
+```bash
+aegis scan --input ./dump --format json --output findings.json
+```
+
+Scanners include secrets, OWASP patterns, DOM XSS, WAF indicators, API extraction,
+platform detection, and ATO/session signals.
+
+## 5. Optional workflows
+
+ATO scenario:
+
+```bash
+aegis exploit --config configs/workflows/example.yaml
+```
+
+Screenshot:
+
+```bash
+aegis screenshot --url https://example.local --output screenshot.png
+```
+
+Render check:
+
+```bash
+aegis rendercheck --url https://example.local
+```
+
+## 6. Quality checks
+
+Before trusting a result set:
+
+- Run the Go test gate (`gofmt`, `go vet`, `go build`, `go test`)
+- Confirm detector false-positive gates are present for modified detectors
+- Confirm repeated crawls of the same mock target are deterministic when testing crawler changes
+- Confirm API runs with auth enabled unless this is an explicit dev run
+
+## Out of scope
+
+This workflow does not include smart-contract bytecode analysis, Android analysis,
+desktop binary analysis, or multi-target internet recon. Those are outside current
+Aegis scope.

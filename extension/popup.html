@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 320px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    padding: 16px;
+  }
+  h1 {
+    font-size: 16px;
+    color: #00d4aa;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  h1 .logo { font-size: 20px; }
+  .status-card {
+    background: #16213e;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+    border: 1px solid #0f3460;
+  }
+  .status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .status-row:last-child { margin-bottom: 0; }
+  .status-label { font-size: 12px; color: #888; }
+  .status-value { font-size: 13px; font-weight: 500; }
+  .dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+  }
+  .dot.connected { background: #00d4aa; }
+  .dot.disconnected { background: #e74c3c; }
+  .dot.connecting { background: #f39c12; animation: pulse 1s infinite; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  .input-group {
+    margin-bottom: 12px;
+  }
+  .input-group label {
+    display: block;
+    font-size: 11px;
+    color: #888;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .input-group input {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid #0f3460;
+    border-radius: 6px;
+    background: #0a0a1a;
+    color: #e0e0e0;
+    font-size: 13px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .input-group input:focus {
+    outline: none;
+    border-color: #00d4aa;
+  }
+  .btn {
+    width: 100%;
+    padding: 10px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn-connect {
+    background: #00d4aa;
+    color: #1a1a2e;
+  }
+  .btn-connect:hover { background: #00eabb; }
+  .btn-disconnect {
+    background: #e74c3c;
+    color: white;
+  }
+  .btn-disconnect:hover { background: #c0392b; }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .footer {
+    margin-top: 12px;
+    font-size: 10px;
+    color: #555;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+  <p id="native-status" style="font-size:11px;color:#888" hidden></p>
+  <h1><span class="logo">&#x1f6e1;</span> Aegis Connector</h1>
+
+  <div class="status-card">
+    <div class="status-row">
+      <span class="status-label">Bridge</span>
+      <span class="status-value" id="bridge-status">
+        <span class="dot disconnected" id="status-dot"></span>
+        <span id="status-text">Disconnected</span>
+      </span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Bridge URL</span>
+      <span class="status-value" id="bridge-url">--</span>
+    </div>
+  </div>
+
+  <div class="input-group">
+    <label>Bridge Host</label>
+    <input type="text" id="host-input" value="127.0.0.1" placeholder="127.0.0.1">
+  </div>
+  <div class="input-group">
+    <label>Bridge WS Port</label>
+    <input type="number" id="port-input" value="" placeholder="Auto">
+  </div>
+  <div class="input-group">
+    <label>Manual Bridge Token</label>
+    <input type="password" id="token-input" value="" placeholder="Required for manual setup" autocomplete="off">
+  </div>
+
+  <button class="btn btn-connect" id="btn-connect">Connect</button>
+  <button class="btn btn-disconnect" id="btn-disconnect" style="display:none">Disconnect</button>
+
+  <div class="status-card" id="policy-card" style="margin-top:12px">
+    <div class="status-row">
+      <span class="status-label">Policy Mode</span>
+      <span class="status-value" id="policy-mode">--</span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Target</span>
+      <span class="status-value" id="target-info">--</span>
+    </div>
+    <div class="input-group" style="margin:8px 0 0 0">
+      <label>Set Mode</label>
+      <select id="policy-select" style="width:100%;padding:8px 10px;border:1px solid #0f3460;border-radius:6px;background:#0a0a1a;color:#e0e0e0;font-size:13px;">
+        <option value="manual-approve">manual-approve</option>
+        <option value="auto-with-prompts">auto-with-prompts</option>
+        <option value="unattended">unattended (trusted scope)</option>
+      </select>
+    </div>
+    <div class="input-group" style="margin:8px 0 0 0">
+      <label>Trusted origins/paths (comma separated)</label>
+      <input type="text" id="trusted-scopes" placeholder="https://example.com, https://example.org/app">
+    </div>
+    <button class="btn btn-connect" id="btn-save-policy" style="margin-top:8px;padding:8px;font-size:12px;">Save Policy</button>
+    <div id="policy-msg" style="font-size:11px;color:#888;margin-top:6px;min-height:14px;"></div>
+  </div>
+
+  <div class="status-card" id="approval-card" style="margin-top:12px;display:none">
+    <div class="status-row"><span class="status-label">Approval required</span></div>
+    <div id="approval-list"></div>
+  </div>
+
+  <div class="status-card" style="margin-top:12px">
+    <button class="btn btn-disconnect" id="btn-clear-data" style="padding:8px;font-size:12px;">Clear Stored Task Data</button>
+    <div style="font-size:10px;color:#888;margin-top:6px">Deletes workflows, recordings, schedules, run history, audit history, and target state. Does not delete downloads or bridge configuration.</div>
+  </div>
+
+  <div class="status-card" id="recorder-card" style="margin-top:12px;display:none">
+    <div class="status-row">
+      <span class="status-label">Recorder</span>
+      <span class="status-value" id="recorder-status">
+        <span class="dot disconnected" id="recorder-dot"></span>
+        <span id="recorder-text">Inactive</span>
+      </span>
+    </div>
+    <div class="status-row">
+      <span class="status-label">Steps</span>
+      <span class="status-value" id="recorder-steps">0</span>
+    </div>
+    <div class="input-group" style="margin:8px 0 0 0">
+      <label>Workflow Name</label>
+      <input type="text" id="recorder-name" placeholder="my-workflow">
+    </div>
+    <div class="input-group">
+      <label>
+        <input type="checkbox" id="recorder-sensitive" style="margin-right:8px;accent-color:#00d4aa;"> Include sensitive fields
+      </label>
+    </div>
+    <button class="btn btn-connect" id="btn-recorder-start" style="margin-top:8px;padding:8px;font-size:12px;">Start Recording</button>
+    <button class="btn btn-connect" id="btn-recorder-pause" style="margin-top:4px;padding:8px;font-size:12px;display:none;">Pause</button>
+    <button class="btn btn-disconnect" id="btn-recorder-stop" style="margin-top:4px;padding:8px;font-size:12px;display:none;">Stop & Save</button>
+    <div id="recorder-msg" style="font-size:11px;color:#888;margin-top:6px;min-height:14px;"></div>
+  </div>
+
+  <div class="footer">
+    Aegis Browser Connector v1.2.0<br>
+    Localhost-only · deterministic local policy
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

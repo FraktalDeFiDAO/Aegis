@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/coppertone/bug-hunter/app/aegis/internal/validator"
 )
 
 // XSSFinding represents an XSS vulnerability finding
@@ -31,9 +33,10 @@ type XSSFinding struct {
 
 // Scanner provides XSS scanning
 type Scanner struct {
-	httpClient *http.Client
-	timeout    time.Duration
-	
+	httpClient        *http.Client
+	timeout           time.Duration
+	allowPrivateHosts bool
+
 	payloads []string
 }
 
@@ -47,19 +50,29 @@ func WithTimeout(timeout time.Duration) ScannerOption {
 	}
 }
 
+// WithAllowPrivateHosts permits localhost and RFC1918 targets.
+func WithAllowPrivateHosts(allow bool) ScannerOption {
+	return func(s *Scanner) {
+		s.allowPrivateHosts = allow
+	}
+}
+
 // NewScanner creates a new XSS scanner
 func NewScanner(opts ...ScannerOption) (*Scanner, error) {
 	s := &Scanner{
-		timeout: 30 * time.Second,
+		timeout:           30 * time.Second,
+		allowPrivateHosts: true,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 	}
-	
+
 	for _, opt := range opts {
 		opt(s)
 	}
-	
+
+	s.httpClient.Timeout = s.timeout
+	s.httpClient.CheckRedirect = validator.RedirectPolicy(s.allowPrivateHosts)
 	s.initPayloads()
 	return s, nil
 }
@@ -77,27 +90,37 @@ func (s *Scanner) initPayloads() {
 // ScanTarget scans a URL for XSS vulnerabilities
 func (s *Scanner) ScanTarget(targetURL string) []XSSFinding {
 	var findings []XSSFinding
-	
+
+	if s.allowPrivateHosts {
+		if err := validator.ValidateURL(targetURL); err != nil {
+			return findings
+		}
+	} else {
+		if err := validator.ValidateTargetURL(targetURL); err != nil {
+			return findings
+		}
+	}
+
 	parsedURL, err := url.Parse(targetURL)
 	if err != nil {
 		return findings
 	}
-	
+
 	// Test URL parameters
 	if parsedURL.RawQuery != "" {
 		params := parsedURL.Query()
 		for param := range params {
 			for _, payload := range s.payloads {
 				testURL := injectParameter(targetURL, param, payload)
-				
+
 				resp, err := s.httpClient.Get(testURL)
 				if err != nil {
 					continue
 				}
-				
+
 				body, _ := io.ReadAll(resp.Body)
 				resp.Body.Close()
-				
+
 				if strings.Contains(string(body), payload) || strings.Contains(string(body), "alert") {
 					findings = append(findings, XSSFinding{
 						Type:        "Reflected XSS",
@@ -118,7 +141,7 @@ func (s *Scanner) ScanTarget(targetURL string) []XSSFinding {
 			}
 		}
 	}
-	
+
 	return findings
 }
 

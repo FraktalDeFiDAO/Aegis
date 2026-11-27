@@ -19,21 +19,23 @@ import (
 type ATOType string
 
 const (
-	ATOSessionFixation     ATOType = "session_fixation"
-	ATOWeakSessionToken    ATOType = "weak_session_token"
-	ATOMissingHttpOnly     ATOType = "missing_httponly"
-	ATOMissingSecure       ATOType = "missing_secure"
-	ATOMissingSameSite     ATOType = "missing_samesite"
-	ATOCSRFTokenIssue      ATOType = "csrf_token_issue"
-	ATOPasswordResetFlaw   ATOType = "password_reset_flaw"
-	ATOOAuthMisconfigured  ATOType = "oauth_misconfigured"
-	ATOJWTWeakness         ATOType = "jwt_weakness"
-	ATOBruteForceVuln      ATOType = "brute_force_vulnerable"
-	ATOAccountEnumeration  ATOType = "account_enumeration"
-	ATOInsecureRememberMe  ATOType = "insecure_remember_me"
-	ATOTokenInURL          ATOType = "token_in_url"
-	ATOConcurrentSessions  ATOType = "concurrent_sessions"
-	ATOInsecureLogout      ATOType = "insecure_logout"
+	ATOSessionFixation  ATOType = "session_fixation"
+	ATOWeakSessionToken ATOType = "weak_session_token"
+	ATOMissingHttpOnly  ATOType = "missing_httponly"
+	ATOMissingSecure    ATOType = "missing_secure"
+	ATOMissingSameSite  ATOType = "missing_samesite"
+	//nosec G101 - This is a vulnerability type constant name, not a credential
+	ATOCSRFTokenIssue     ATOType = "csrf_token_issue"
+	ATOPasswordResetFlaw  ATOType = "password_reset_flaw"
+	ATOOAuthMisconfigured ATOType = "oauth_misconfigured"
+	ATOJWTWeakness        ATOType = "jwt_weakness"
+	ATOBruteForceVuln     ATOType = "brute_force_vulnerable"
+	ATOAccountEnumeration ATOType = "account_enumeration"
+	ATOInsecureRememberMe ATOType = "insecure_remember_me"
+	//nosec G101 - This is a vulnerability type constant name, not a credential
+	ATOTokenInURL         ATOType = "token_in_url"
+	ATOConcurrentSessions ATOType = "concurrent_sessions"
+	ATOInsecureLogout     ATOType = "insecure_logout"
 )
 
 // Severity levels
@@ -65,6 +67,7 @@ type Detector struct {
 	httpClient *http.Client
 	timeout    time.Duration
 	userAgent  string
+	insecure   bool
 }
 
 // DetectorOption configures the ATO detector
@@ -84,6 +87,14 @@ func WithUserAgent(ua string) DetectorOption {
 	}
 }
 
+// WithInsecureTLS disables TLS certificate verification.
+// Use only for testing against internal targets with self-signed certs.
+func WithInsecureTLS(insecure bool) DetectorOption {
+	return func(d *Detector) {
+		d.insecure = insecure
+	}
+}
+
 // NewDetector creates a new ATO detector
 func NewDetector(opts ...DetectorOption) *Detector {
 	d := &Detector{
@@ -98,7 +109,7 @@ func NewDetector(opts ...DetectorOption) *Detector {
 	d.httpClient = &http.Client{
 		Timeout: d.timeout,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			TLSClientConfig: secureTLSConfig(d.insecure),
 		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -106,6 +117,17 @@ func NewDetector(opts ...DetectorOption) *Detector {
 	}
 
 	return d
+}
+
+// secureTLSConfig returns a TLS config that defaults to certificate verification.
+// insecureSkipVerify is only allowed when explicitly enabled via configuration option.
+func secureTLSConfig(insecureSkipVerify bool) *tls.Config {
+	// Always verify certificates by default. InsecureSkipVerify must be
+	// explicitly enabled via configuration option and is not the default.
+	return &tls.Config{
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: insecureSkipVerify,
+	}
 }
 
 // DetectAll performs comprehensive ATO vulnerability detection

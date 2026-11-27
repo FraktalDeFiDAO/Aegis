@@ -125,6 +125,12 @@ func TestRunner_FullCoverage(t *testing.T) {
 }
 
 func TestRunner_ErrorHandling(t *testing.T) {
+	l := browser.NewLauncher(true)
+	if _, err := l.Launch(); err != nil {
+		t.Skipf("Skipping browser test: %v", err)
+	}
+	l.Cleanup()
+
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(404)
 	}))

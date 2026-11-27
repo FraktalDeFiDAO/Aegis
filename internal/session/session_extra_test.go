@@ -80,4 +80,4 @@ func TestStorageScriptAndMapFromGson(t *testing.T) {
 type noopJar struct{}
 
 func (n *noopJar) SetCookies(_ *url.URL, _ []*http.Cookie) {}
-func (n *noopJar) Cookies(_ *url.URL) []*http.Cookie      { return nil }
+func (n *noopJar) Cookies(_ *url.URL) []*http.Cookie       { return nil }

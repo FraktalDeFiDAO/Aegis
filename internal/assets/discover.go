@@ -2,6 +2,7 @@
 package assets
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -9,6 +10,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/coppertone/bug-hunter/app/aegis/internal/validator"
 )
 
 // AssetType represents the type of discovered asset
@@ -44,8 +47,9 @@ type DiscoveryResult struct {
 
 // Discoverer handles asset discovery
 type Discoverer struct {
-	httpClient *http.Client
-	timeout    time.Duration
+	httpClient        *http.Client
+	timeout           time.Duration
+	allowPrivateHosts bool
 }
 
 // DiscovererOption configures the discoverer
@@ -58,19 +62,33 @@ func WithTimeout(timeout time.Duration) DiscovererOption {
 	}
 }
 
+// WithAllowPrivateHosts permits localhost and RFC1918 targets.
+func WithAllowPrivateHosts(allow bool) DiscovererOption {
+	return func(d *Discoverer) {
+		d.allowPrivateHosts = allow
+	}
+}
+
 // NewDiscoverer creates a new asset discoverer
 func NewDiscoverer(opts ...DiscovererOption) (*Discoverer, error) {
 	d := &Discoverer{
-		timeout: 30 * time.Second,
+		timeout:           30 * time.Second,
+		allowPrivateHosts: true,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{},
+			},
 		},
 	}
-	
+
 	for _, opt := range opts {
 		opt(d)
 	}
-	
+
+	d.httpClient.Timeout = d.timeout
+	d.httpClient.CheckRedirect = validator.RedirectPolicy(d.allowPrivateHosts)
+
 	return d, nil
 }
 
@@ -82,19 +100,29 @@ func (d *Discoverer) Discover(baseURL string) (*DiscoveryResult, error) {
 		ByType:        make(map[AssetType]int),
 		ExternalHosts: []string{},
 	}
-	
+
+	if d.allowPrivateHosts {
+		if err := validator.ValidateURL(baseURL); err != nil {
+			return result, err
+		}
+	} else {
+		if err := validator.ValidateTargetURL(baseURL); err != nil {
+			return result, err
+		}
+	}
+
 	discovered := make(map[string]bool)
-	
+
 	// Fetch main page
 	resp, err := d.httpClient.Get(baseURL)
 	if err != nil {
 		return result, err
 	}
 	defer resp.Body.Close()
-	
+
 	body, _ := io.ReadAll(resp.Body)
 	content := string(body)
-	
+
 	// Extract JavaScript
 	jsPattern := regexp.MustCompile(`src=["']([^"']+\.js[^"']*)["']`)
 	jsMatches := jsPattern.FindAllStringSubmatch(content, -1)
@@ -108,7 +136,7 @@ func (d *Discoverer) Discover(baseURL string) (*DiscoveryResult, error) {
 			})
 		}
 	}
-	
+
 	// Extract CSS
 	cssPattern := regexp.MustCompile(`href=["']([^"']+\.css[^"']*)["']`)
 	cssMatches := cssPattern.FindAllStringSubmatch(content, -1)
@@ -122,7 +150,7 @@ func (d *Discoverer) Discover(baseURL string) (*DiscoveryResult, error) {
 			})
 		}
 	}
-	
+
 	// Extract Images
 	imgPattern := regexp.MustCompile(`src=["']([^"']+\.(?:png|jpg|jpeg|gif|svg|webp))["']`)
 	imgMatches := imgPattern.FindAllStringSubmatch(content, -1)
@@ -136,19 +164,19 @@ func (d *Discoverer) Discover(baseURL string) (*DiscoveryResult, error) {
 			})
 		}
 	}
-	
+
 	// Calculate stats
 	result.TotalCount = len(result.Assets)
 	for _, asset := range result.Assets {
 		result.ByType[asset.Type]++
-		
+
 		if host := extractHost(asset.URL); host != "" && !isSameHost(baseURL, asset.URL) {
 			if !contains(result.ExternalHosts, host) {
 				result.ExternalHosts = append(result.ExternalHosts, host)
 			}
 		}
 	}
-	
+
 	return result, nil
 }
 
@@ -159,13 +187,13 @@ func resolveURL(base, ref string) string {
 	if strings.HasPrefix(ref, "data:") {
 		return ""
 	}
-	
+
 	b, _ := url.Parse(base)
 	r, _ := url.Parse(ref)
 	if b == nil || r == nil {
 		return ""
 	}
-	
+
 	return b.ResolveReference(r).String()
 }
 

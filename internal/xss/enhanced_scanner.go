@@ -29,6 +29,7 @@ type EnhancedScanner struct {
 	encodingLevel waf.EncodingLevel
 	elements      []waf.ElementType
 	verbose       bool
+	insecure      bool
 }
 
 // EnhancedScannerOption configures the enhanced scanner
@@ -90,6 +91,14 @@ func WithVerbose(verbose bool) EnhancedScannerOption {
 	}
 }
 
+// WithInsecureTLS disables TLS certificate verification.
+// Use only for testing against internal targets with self-signed certs.
+func WithInsecureTLS(insecure bool) EnhancedScannerOption {
+	return func(s *EnhancedScanner) {
+		s.insecure = insecure
+	}
+}
+
 // NewEnhancedScanner creates a new enhanced XSS scanner
 func NewEnhancedScanner(opts ...EnhancedScannerOption) (*EnhancedScanner, error) {
 	s := &EnhancedScanner{
@@ -112,7 +121,7 @@ func NewEnhancedScanner(opts ...EnhancedScannerOption) (*EnhancedScanner, error)
 	s.httpClient = &http.Client{
 		Timeout: s.timeout,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			TLSClientConfig: secureTLSConfig(s.insecure),
 		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -130,12 +139,12 @@ func NewEnhancedScanner(opts ...EnhancedScannerOption) (*EnhancedScanner, error)
 // EnhancedFinding extends XSSFinding with WAF bypass info
 type EnhancedFinding struct {
 	XSSFinding
-	WAFType        waf.WAFType `json:"waf_type,omitempty"`
-	WAFBypassed    bool        `json:"waf_bypassed,omitempty"`
-	EncodingUsed   string      `json:"encoding_used,omitempty"`
-	OriginalPayload string     `json:"original_payload,omitempty"`
-	InjectionPoint string      `json:"injection_point"`
-	RequestDetails *RequestDetails `json:"request_details,omitempty"`
+	WAFType         waf.WAFType     `json:"waf_type,omitempty"`
+	WAFBypassed     bool            `json:"waf_bypassed,omitempty"`
+	EncodingUsed    string          `json:"encoding_used,omitempty"`
+	OriginalPayload string          `json:"original_payload,omitempty"`
+	InjectionPoint  string          `json:"injection_point"`
+	RequestDetails  *RequestDetails `json:"request_details,omitempty"`
 }
 
 // RequestDetails holds request/response information for evidence
@@ -149,11 +158,11 @@ type RequestDetails struct {
 
 // ScanResult holds the complete scan results
 type ScanResult struct {
-	Target       string            `json:"target"`
-	WAFDetection *waf.DetectionResult `json:"waf_detection,omitempty"`
-	Findings     []EnhancedFinding `json:"findings"`
-	TestedPayloads int             `json:"tested_payloads"`
-	Duration     time.Duration     `json:"duration"`
+	Target         string               `json:"target"`
+	WAFDetection   *waf.DetectionResult `json:"waf_detection,omitempty"`
+	Findings       []EnhancedFinding    `json:"findings"`
+	TestedPayloads int                  `json:"tested_payloads"`
+	Duration       time.Duration        `json:"duration"`
 }
 
 // ScanWithBypass performs XSS scanning with WAF bypass
@@ -599,4 +608,14 @@ func (s *EnhancedScanner) Close() error {
 // GetWAFStrategies returns bypass strategies for detected WAF
 func (s *EnhancedScanner) GetWAFStrategies(wafType waf.WAFType) []string {
 	return waf.GetBypassStrategies(wafType)
+}
+
+// secureTLSConfig returns a TLS config that defaults to certificate verification.
+// insecureSkipVerify is only allowed when explicitly enabled via configuration option.
+func secureTLSConfig(insecureSkipVerify bool) *tls.Config {
+	// Always verify certificates by default. InsecureSkipVerify must be
+	// explicitly enabled via configuration option and is not the default.
+	return &tls.Config{
+		InsecureSkipVerify: insecureSkipVerify,
+	}
 }

@@ -191,10 +191,10 @@ func TestDetector_IsTokenPredictable(t *testing.T) {
 		token       string
 		predictable bool
 	}{
-		{"12345678", true},           // Sequential numbers
-		{"1609459200000", true},      // Timestamp-like
-		{"aaaaaa", true},             // Low entropy
-		{"xK9mP2qR8vL5", false},      // Random-looking
+		{"12345678", true},              // Sequential numbers
+		{"1609459200000", true},         // Timestamp-like
+		{"aaaaaa", true},                // Low entropy
+		{"xK9mP2qR8vL5", false},         // Random-looking
 		{"a1b2c3d4e5f6g7h8i9j0", false}, // Mixed characters
 	}
 
@@ -210,8 +210,8 @@ func TestDetector_SecureCookies(t *testing.T) {
 	// HTTPS server with missing Secure flag
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.SetCookie(w, &http.Cookie{
-			Name:   "session",
-			Value:  "test-session-value-that-is-long-enough",
+			Name:  "session",
+			Value: "test-session-value-that-is-long-enough",
 			// Missing Secure flag
 		})
 		w.WriteHeader(http.StatusOK)

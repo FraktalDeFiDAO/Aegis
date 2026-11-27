@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/coppertone/bug-hunter/app/aegis/internal/browser"
 	"github.com/coppertone/bug-hunter/app/aegis/internal/config"
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/input"
@@ -55,10 +56,7 @@ func (r *Runner) RunAll() error {
 
 func (r *Runner) initInstances() error {
 	for _, instCfg := range r.Config.Instances {
-		l := launcher.New().
-			Headless(instCfg.Headless).
-			Set("no-sandbox", "true").
-			Set("disable-gpu", "true") 
+		l := browser.NewLauncher(instCfg.Headless)
 
 		// Prefer system chromium if available to avoid missing internal libraries in container
 		if path, err := exec.LookPath("chromium"); err == nil {
@@ -68,7 +66,7 @@ func (r *Runner) initInstances() error {
 		} else if path, err := exec.LookPath("chromium-browser"); err == nil {
 			l.Bin(path)
 		}
-		
+
 		u, err := l.Launch()
 		if err != nil {
 			// Try to provide more context
@@ -162,7 +160,7 @@ func (r *Runner) executeTask(task config.Task) error {
 			if err := el.Input(value); err != nil {
 				return err
 			}
-			
+
 		case "submit":
 			// Helper to press enter
 			selector := params["selector"]
@@ -199,7 +197,7 @@ func (r *Runner) executeTask(task config.Task) error {
 				return err
 			}
 			fmt.Printf("[%s] Eval: %v\n", action.Instance, res.Value)
-			
+
 			// Optional capture of eval result
 			if varName := params["variable"]; varName != "" {
 				r.Variables[varName] = fmt.Sprintf("%v", res.Value)
@@ -212,12 +210,12 @@ func (r *Runner) executeTask(task config.Task) error {
 			if selector == "" || varName == "" {
 				return fmt.Errorf("missing 'selector' or 'variable' param for extract")
 			}
-			
+
 			el, err := page.Timeout(elementActionTimeout).Element(selector)
 			if err != nil {
 				return fmt.Errorf("element not found: %s", selector)
 			}
-			
+
 			var val string
 			if attribute != "" {
 				attr, err := el.Attribute(attribute)
@@ -236,11 +234,11 @@ func (r *Runner) executeTask(task config.Task) error {
 			r.Variables[varName] = val
 			fmt.Printf("Extracted variable %s = %s\n", varName, val)
 
-		case "assert": 
+		case "assert":
 			selector := params["selector"]
 			expected := params["text"]
 			contains := params["contains"]
-			
+
 			if selector != "" {
 				el, err := page.Timeout(elementActionTimeout).Element(selector)
 				if err != nil {
@@ -250,7 +248,7 @@ func (r *Runner) executeTask(task config.Task) error {
 				if err != nil {
 					return err
 				}
-				
+
 				if expected != "" && text != expected {
 					return fmt.Errorf("assertion failed: expected '%s', got '%s'", expected, text)
 				}

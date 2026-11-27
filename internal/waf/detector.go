@@ -39,12 +39,12 @@ const (
 
 // DetectionResult holds WAF fingerprinting results
 type DetectionResult struct {
-	WAFType       WAFType           `json:"waf_type"`
-	Confidence    int               `json:"confidence"` // 0-100
-	Evidence      []string          `json:"evidence"`
-	Headers       map[string]string `json:"headers,omitempty"`
-	Cookies       []string          `json:"cookies,omitempty"`
-	BlockingBehavior string         `json:"blocking_behavior,omitempty"`
+	WAFType          WAFType           `json:"waf_type"`
+	Confidence       int               `json:"confidence"` // 0-100
+	Evidence         []string          `json:"evidence"`
+	Headers          map[string]string `json:"headers,omitempty"`
+	Cookies          []string          `json:"cookies,omitempty"`
+	BlockingBehavior string            `json:"blocking_behavior,omitempty"`
 }
 
 // Detector provides WAF fingerprinting capabilities
@@ -52,6 +52,7 @@ type Detector struct {
 	httpClient *http.Client
 	timeout    time.Duration
 	userAgent  string
+	insecure   bool
 }
 
 // DetectorOption configures the WAF detector
@@ -71,6 +72,14 @@ func WithUserAgent(ua string) DetectorOption {
 	}
 }
 
+// WithInsecureTLS disables TLS certificate verification.
+// Use only for testing against internal targets with self-signed certs.
+func WithInsecureTLS(insecure bool) DetectorOption {
+	return func(d *Detector) {
+		d.insecure = insecure
+	}
+}
+
 // NewDetector creates a new WAF detector
 func NewDetector(opts ...DetectorOption) *Detector {
 	d := &Detector{
@@ -82,10 +91,12 @@ func NewDetector(opts ...DetectorOption) *Detector {
 		opt(d)
 	}
 
+	tlsConfig := secureTLSConfig(d.insecure)
+
 	d.httpClient = &http.Client{
 		Timeout: d.timeout,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			TLSClientConfig: tlsConfig,
 		},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
@@ -93,6 +104,16 @@ func NewDetector(opts ...DetectorOption) *Detector {
 	}
 
 	return d
+}
+
+// secureTLSConfig returns a TLS config that defaults to certificate verification.
+// insecureSkipVerify is only allowed when explicitly enabled via configuration.
+func secureTLSConfig(insecureSkipVerify bool) *tls.Config {
+	// Always verify certificates by default. InsecureSkipVerify must be
+	// explicitly enabled via configuration option and is not the default.
+	return &tls.Config{
+		InsecureSkipVerify: insecureSkipVerify,
+	}
 }
 
 // WAF fingerprint signatures
@@ -108,8 +129,8 @@ var wafSignatures = []wafSignature{
 	{
 		WAFType: WAFCloudflare,
 		HeaderPatterns: map[string]*regexp.Regexp{
-			"Server":     regexp.MustCompile(`(?i)cloudflare`),
-			"CF-RAY":     regexp.MustCompile(`.+`),
+			"Server":          regexp.MustCompile(`(?i)cloudflare`),
+			"CF-RAY":          regexp.MustCompile(`.+`),
 			"CF-Cache-Status": regexp.MustCompile(`.+`),
 			"cf-request-id":   regexp.MustCompile(`.+`),
 		},
@@ -129,9 +150,9 @@ var wafSignatures = []wafSignature{
 	{
 		WAFType: WAFAkamai,
 		HeaderPatterns: map[string]*regexp.Regexp{
-			"Server":        regexp.MustCompile(`(?i)akamai`),
-			"X-Akamai-Transformed": regexp.MustCompile(`.+`),
-			"Akamai-GRN":    regexp.MustCompile(`.+`),
+			"Server":                regexp.MustCompile(`(?i)akamai`),
+			"X-Akamai-Transformed":  regexp.MustCompile(`.+`),
+			"Akamai-GRN":            regexp.MustCompile(`.+`),
 			"X-Akamai-Session-Info": regexp.MustCompile(`.+`),
 		},
 		CookiePatterns: []*regexp.Regexp{
@@ -149,7 +170,7 @@ var wafSignatures = []wafSignature{
 	{
 		WAFType: WAFKona,
 		HeaderPatterns: map[string]*regexp.Regexp{
-			"Server": regexp.MustCompile(`(?i)akamai.*ghost`),
+			"Server":       regexp.MustCompile(`(?i)akamai.*ghost`),
 			"X-Kona-Error": regexp.MustCompile(`.+`),
 		},
 		CookiePatterns: []*regexp.Regexp{
@@ -162,8 +183,8 @@ var wafSignatures = []wafSignature{
 	{
 		WAFType: WAFImperva,
 		HeaderPatterns: map[string]*regexp.Regexp{
-			"X-Iinfo":     regexp.MustCompile(`.+`),
-			"X-CDN":       regexp.MustCompile(`(?i)imperva`),
+			"X-Iinfo": regexp.MustCompile(`.+`),
+			"X-CDN":   regexp.MustCompile(`(?i)imperva`),
 		},
 		CookiePatterns: []*regexp.Regexp{
 			regexp.MustCompile(`(?i)incap_ses_`),
@@ -208,8 +229,8 @@ var wafSignatures = []wafSignature{
 	{
 		WAFType: WAFAFW,
 		HeaderPatterns: map[string]*regexp.Regexp{
-			"X-AMZ-CF-ID":    regexp.MustCompile(`.+`),
-			"X-AMZ-ID-2":     regexp.MustCompile(`.+`),
+			"X-AMZ-CF-ID":      regexp.MustCompile(`.+`),
+			"X-AMZ-ID-2":       regexp.MustCompile(`.+`),
 			"X-AMZN-RequestId": regexp.MustCompile(`.+`),
 		},
 		BodyPatterns: []*regexp.Regexp{
@@ -269,7 +290,7 @@ var wafSignatures = []wafSignature{
 	{
 		WAFType: WAFNginx,
 		HeaderPatterns: map[string]*regexp.Regexp{
-			"Server": regexp.MustCompile(`(?i)naxsi|nginx.*waf`),
+			"Server":      regexp.MustCompile(`(?i)naxsi|nginx.*waf`),
 			"X-NAXSI-SIG": regexp.MustCompile(`.+`),
 		},
 		BodyPatterns: []*regexp.Regexp{
@@ -280,10 +301,10 @@ var wafSignatures = []wafSignature{
 	{
 		WAFType: WAFStackPath,
 		HeaderPatterns: map[string]*regexp.Regexp{
-			"Server":             regexp.MustCompile(`(?i)stackpath|maxcdn|netdna`),
-			"X-SP-Edge-Host":     regexp.MustCompile(`.+`),
-			"X-SP-URL":           regexp.MustCompile(`.+`),
-			"X-SP-WAF-Reason":    regexp.MustCompile(`.+`),
+			"Server":          regexp.MustCompile(`(?i)stackpath|maxcdn|netdna`),
+			"X-SP-Edge-Host":  regexp.MustCompile(`.+`),
+			"X-SP-URL":        regexp.MustCompile(`.+`),
+			"X-SP-WAF-Reason": regexp.MustCompile(`.+`),
 		},
 		CookiePatterns: []*regexp.Regexp{
 			regexp.MustCompile(`(?i)stackpath`),

@@ -31,14 +31,14 @@ type Script struct {
 
 // ScriptSettings holds script configuration
 type ScriptSettings struct {
-	Headless        bool   `json:"headless,omitempty" yaml:"headless,omitempty"`
-	Timeout         string `json:"timeout,omitempty" yaml:"timeout,omitempty"`
+	Headless        bool      `json:"headless,omitempty" yaml:"headless,omitempty"`
+	Timeout         string    `json:"timeout,omitempty" yaml:"timeout,omitempty"`
 	Viewport        *Viewport `json:"viewport,omitempty" yaml:"viewport,omitempty"`
-	UserAgent       string `json:"user_agent,omitempty" yaml:"user_agent,omitempty"`
-	SlowMotion      string `json:"slow_motion,omitempty" yaml:"slow_motion,omitempty"`
-	ScreenshotsDir  string `json:"screenshots_dir,omitempty" yaml:"screenshots_dir,omitempty"`
-	RecordVideo     bool   `json:"record_video,omitempty" yaml:"record_video,omitempty"`
-	IgnoreHTTPSErrs bool   `json:"ignore_https_errors,omitempty" yaml:"ignore_https_errors,omitempty"`
+	UserAgent       string    `json:"user_agent,omitempty" yaml:"user_agent,omitempty"`
+	SlowMotion      string    `json:"slow_motion,omitempty" yaml:"slow_motion,omitempty"`
+	ScreenshotsDir  string    `json:"screenshots_dir,omitempty" yaml:"screenshots_dir,omitempty"`
+	RecordVideo     bool      `json:"record_video,omitempty" yaml:"record_video,omitempty"`
+	IgnoreHTTPSErrs bool      `json:"ignore_https_errors,omitempty" yaml:"ignore_https_errors,omitempty"`
 }
 
 // Viewport defines browser viewport size
@@ -50,8 +50,8 @@ type Viewport struct {
 // Action represents a browser action
 type Action struct {
 	// Action identification
-	ID   string `json:"id,omitempty" yaml:"id,omitempty"`
-	Name string `json:"name,omitempty" yaml:"name,omitempty"`
+	ID   string     `json:"id,omitempty" yaml:"id,omitempty"`
+	Name string     `json:"name,omitempty" yaml:"name,omitempty"`
 	Type ActionType `json:"type" yaml:"type"`
 
 	// Navigation actions
@@ -91,7 +91,7 @@ type Action struct {
 	Count     int      `json:"count,omitempty" yaml:"count,omitempty"`     // for loop
 
 	// Data extraction
-	Variable string   `json:"variable,omitempty" yaml:"variable,omitempty"` // store result in variable
+	Variable string    `json:"variable,omitempty" yaml:"variable,omitempty"` // store result in variable
 	Extract  []Extract `json:"extract,omitempty" yaml:"extract,omitempty"`
 
 	// Options
@@ -114,79 +114,79 @@ type ActionType string
 
 const (
 	// Navigation
-	ActionNavigate     ActionType = "navigate"
-	ActionGoBack       ActionType = "go_back"
-	ActionGoForward    ActionType = "go_forward"
-	ActionReload       ActionType = "reload"
+	ActionNavigate  ActionType = "navigate"
+	ActionGoBack    ActionType = "go_back"
+	ActionGoForward ActionType = "go_forward"
+	ActionReload    ActionType = "reload"
 
 	// Element interaction
-	ActionClick        ActionType = "click"
-	ActionDoubleClick  ActionType = "double_click"
-	ActionRightClick   ActionType = "right_click"
-	ActionHover        ActionType = "hover"
-	ActionFocus        ActionType = "focus"
-	ActionBlur         ActionType = "blur"
-	ActionScroll       ActionType = "scroll"
+	ActionClick          ActionType = "click"
+	ActionDoubleClick    ActionType = "double_click"
+	ActionRightClick     ActionType = "right_click"
+	ActionHover          ActionType = "hover"
+	ActionFocus          ActionType = "focus"
+	ActionBlur           ActionType = "blur"
+	ActionScroll         ActionType = "scroll"
 	ActionScrollIntoView ActionType = "scroll_into_view"
 
 	// Input
-	ActionType_        ActionType = "type"  // renamed to avoid conflict
-	ActionFill         ActionType = "fill"
-	ActionClear        ActionType = "clear"
-	ActionPress        ActionType = "press"
-	ActionUpload       ActionType = "upload"
-	ActionSelect       ActionType = "select"
-	ActionCheck        ActionType = "check"
-	ActionUncheck      ActionType = "uncheck"
+	ActionType_   ActionType = "type" // renamed to avoid conflict
+	ActionFill    ActionType = "fill"
+	ActionClear   ActionType = "clear"
+	ActionPress   ActionType = "press"
+	ActionUpload  ActionType = "upload"
+	ActionSelect  ActionType = "select"
+	ActionCheck   ActionType = "check"
+	ActionUncheck ActionType = "uncheck"
 
 	// Waiting
-	ActionWait         ActionType = "wait"
-	ActionWaitFor      ActionType = "wait_for"
-	ActionWaitForNav   ActionType = "wait_for_navigation"
-	ActionWaitForLoad  ActionType = "wait_for_load"
-	ActionWaitForIdle  ActionType = "wait_for_idle"
+	ActionWait        ActionType = "wait"
+	ActionWaitFor     ActionType = "wait_for"
+	ActionWaitForNav  ActionType = "wait_for_navigation"
+	ActionWaitForLoad ActionType = "wait_for_load"
+	ActionWaitForIdle ActionType = "wait_for_idle"
 
 	// JavaScript
-	ActionEvaluate     ActionType = "evaluate"
-	ActionEvaluateAll  ActionType = "evaluate_all"
+	ActionEvaluate    ActionType = "evaluate"
+	ActionEvaluateAll ActionType = "evaluate_all"
 
 	// Screenshots/Recording
-	ActionScreenshot   ActionType = "screenshot"
-	ActionPDF          ActionType = "pdf"
+	ActionScreenshot ActionType = "screenshot"
+	ActionPDF        ActionType = "pdf"
 
 	// Assertions
-	ActionAssert       ActionType = "assert"
-	ActionAssertText   ActionType = "assert_text"
-	ActionAssertValue  ActionType = "assert_value"
-	ActionAssertAttr   ActionType = "assert_attribute"
-	ActionAssertURL    ActionType = "assert_url"
-	ActionAssertTitle  ActionType = "assert_title"
-	ActionAssertExists ActionType = "assert_exists"
+	ActionAssert        ActionType = "assert"
+	ActionAssertText    ActionType = "assert_text"
+	ActionAssertValue   ActionType = "assert_value"
+	ActionAssertAttr    ActionType = "assert_attribute"
+	ActionAssertURL     ActionType = "assert_url"
+	ActionAssertTitle   ActionType = "assert_title"
+	ActionAssertExists  ActionType = "assert_exists"
 	ActionAssertVisible ActionType = "assert_visible"
 
 	// Data extraction
-	ActionExtract      ActionType = "extract"
-	ActionExtractText  ActionType = "extract_text"
-	ActionExtractAttr  ActionType = "extract_attribute"
-	ActionExtractHTML  ActionType = "extract_html"
+	ActionExtract     ActionType = "extract"
+	ActionExtractText ActionType = "extract_text"
+	ActionExtractAttr ActionType = "extract_attribute"
+	ActionExtractHTML ActionType = "extract_html"
 
 	// Control flow
-	ActionIf           ActionType = "if"
-	ActionLoop         ActionType = "loop"
-	ActionForEach      ActionType = "for_each"
+	ActionIf      ActionType = "if"
+	ActionLoop    ActionType = "loop"
+	ActionForEach ActionType = "for_each"
 
 	// Frame handling
-	ActionSwitchFrame  ActionType = "switch_frame"
-	ActionSwitchMain   ActionType = "switch_main"
+	ActionSwitchFrame ActionType = "switch_frame"
+	ActionSwitchMain  ActionType = "switch_main"
 
 	// Tab management
-	ActionNewTab       ActionType = "new_tab"
-	ActionSwitchTab    ActionType = "switch_tab"
-	ActionCloseTab     ActionType = "close_tab"
-	ActionGetTabs      ActionType = "get_tabs"
+	ActionNewTab    ActionType = "new_tab"
+	ActionSwitchTab ActionType = "switch_tab"
+	ActionCloseTab  ActionType = "close_tab"
+	ActionGetTabs   ActionType = "get_tabs"
 
 	// Dialogs
-	ActionAcceptDialog ActionType = "accept_dialog"
+	ActionAcceptDialog  ActionType = "accept_dialog"
 	ActionDismissDialog ActionType = "dismiss_dialog"
 
 	// Cookies
@@ -200,8 +200,8 @@ const (
 	ActionClearStorage ActionType = "clear_storage"
 
 	// Debug
-	ActionPause        ActionType = "pause"
-	ActionLog          ActionType = "log"
+	ActionPause ActionType = "pause"
+	ActionLog   ActionType = "log"
 )
 
 // ActionResult holds the result of an action execution
@@ -218,32 +218,32 @@ type ActionResult struct {
 
 // ScriptResult holds the complete script execution result
 type ScriptResult struct {
-	ScriptName  string            `json:"script_name"`
-	Status      string            `json:"status"`
-	StartTime   time.Time         `json:"start_time"`
-	EndTime     time.Time         `json:"end_time"`
-	Duration    time.Duration     `json:"duration"`
-	Actions     []ActionResult    `json:"actions"`
-	Variables   map[string]string `json:"variables"`
+	ScriptName  string                 `json:"script_name"`
+	Status      string                 `json:"status"`
+	StartTime   time.Time              `json:"start_time"`
+	EndTime     time.Time              `json:"end_time"`
+	Duration    time.Duration          `json:"duration"`
+	Actions     []ActionResult         `json:"actions"`
+	Variables   map[string]string      `json:"variables"`
 	Extracted   map[string]interface{} `json:"extracted,omitempty"`
-	Screenshots []string          `json:"screenshots,omitempty"`
-	Errors      []string          `json:"errors,omitempty"`
+	Screenshots []string               `json:"screenshots,omitempty"`
+	Errors      []string               `json:"errors,omitempty"`
 }
 
 // Automator executes browser automation scripts
 type Automator struct {
-	browser      *rod.Browser
-	page         *rod.Page
-	tabs         map[string]*rod.Page  // named tabs for easy switching
-	tabOrder     []string              // ordered list of tab names
-	script       *Script
-	variables    map[string]string
-	extracted    map[string]interface{}
-	screenshots  []string
-	timeout      time.Duration
-	slowMotion   time.Duration
-	headless     bool
-	verbose      bool
+	browser        *rod.Browser
+	page           *rod.Page
+	tabs           map[string]*rod.Page // named tabs for easy switching
+	tabOrder       []string             // ordered list of tab names
+	script         *Script
+	variables      map[string]string
+	extracted      map[string]interface{}
+	screenshots    []string
+	timeout        time.Duration
+	slowMotion     time.Duration
+	headless       bool
+	verbose        bool
 	screenshotsDir string
 }
 
@@ -288,14 +288,14 @@ func WithScreenshotsDir(dir string) AutomatorOption {
 // NewAutomator creates a new browser automator
 func NewAutomator(opts ...AutomatorOption) *Automator {
 	a := &Automator{
-		variables:   make(map[string]string),
-		extracted:   make(map[string]interface{}),
-		tabs:        make(map[string]*rod.Page),
-		tabOrder:    []string{},
-		screenshots: []string{},
-		timeout:     30 * time.Second,
-		headless:    true,
-		verbose:     false,
+		variables:      make(map[string]string),
+		extracted:      make(map[string]interface{}),
+		tabs:           make(map[string]*rod.Page),
+		tabOrder:       []string{},
+		screenshots:    []string{},
+		timeout:        30 * time.Second,
+		headless:       true,
+		verbose:        false,
 		screenshotsDir: "./screenshots",
 	}
 

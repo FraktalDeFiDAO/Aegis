@@ -5,6 +5,7 @@ package validator
 import (
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"strings"
 )
@@ -49,18 +50,62 @@ func ValidateTargetURL(rawURL string) error {
 		return fmt.Errorf("missing host")
 	}
 
+	return ValidateTargetHost(host)
+}
+
+// ValidateTargetHost validates a hostname or IP and blocks private/local targets.
+// Hostnames are resolved to ensure public-looking names that point to private IPs
+// are rejected before network access occurs.
+func ValidateTargetHost(host string) error {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return fmt.Errorf("missing host")
+	}
+
 	if strings.EqualFold(host, "localhost") || strings.HasSuffix(strings.ToLower(host), ".localhost") {
 		return fmt.Errorf("blocked target host")
 	}
 
 	if ip := net.ParseIP(host); ip != nil {
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-			ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+		if blockedIP(ip) {
+			return fmt.Errorf("blocked target host")
+		}
+		return nil
+	}
+
+	ips, err := net.LookupIP(host)
+	if err != nil {
+		return fmt.Errorf("resolve host: %w", err)
+	}
+	if len(ips) == 0 {
+		return fmt.Errorf("resolve host: no addresses found")
+	}
+	for _, ip := range ips {
+		if blockedIP(ip) {
 			return fmt.Errorf("blocked target host")
 		}
 	}
 
 	return nil
+}
+
+// RedirectPolicy revalidates every redirect target to preserve the same host
+// safety guarantees as the original request.
+func RedirectPolicy(allowPrivate bool) func(req *http.Request, via []*http.Request) error {
+	return func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return fmt.Errorf("too many redirects")
+		}
+		if allowPrivate {
+			return ValidateURL(req.URL.String())
+		}
+		return ValidateTargetURL(req.URL.String())
+	}
+}
+
+func blockedIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified()
 }
 
 // SanitizeFilename cleans a string of potentially dangerous characters
