@@ -189,13 +189,9 @@ func (p *Page) Evaluate(script *rod.EvalOptions) *rod.EvalOptions {
 	return nil
 }
 
-// EvalOnNewDocument registers a script to run on every new document.
-// This is a best-effort via the extension; some features may be limited.
+// EvalOnNewDocument is unavailable through the store-safe connector.
 func (p *Page) EvalOnNewDocument(js string) (*proto.PageAddScriptToEvaluateOnNewDocument, error) {
-	// The extension doesn't have direct EvalOnNewDocument support.
-	// We store it and re-inject on navigation events.
-	// For now, return a placeholder.
-	return &proto.PageAddScriptToEvaluateOnNewDocument{}, nil
+	return nil, fmt.Errorf("arbitrary document script injection is not supported by the extension connector")
 }
 
 // ─── Cookies ─────────────────────────────────────────────────────────────────
@@ -292,8 +288,11 @@ func (p *Page) Screenshot(fullPage bool, params *proto.PageCaptureScreenshot) ([
 		}
 	}
 
-	// Capture visible tab via background
-	result, err := p.connector.sendCommand(bridge.CmdCaptureVisible, cmdParams, p.tabID)
+	command := bridge.CmdCaptureVisible
+	if fullPage {
+		command = bridge.CmdScreenshotFullPage
+	}
+	result, err := p.connector.sendCommand(command, cmdParams, p.tabID)
 	if err != nil {
 		return nil, err
 	}
@@ -315,7 +314,7 @@ func (p *Page) Screenshot(fullPage bool, params *proto.PageCaptureScreenshot) ([
 		if d2, err2 := base64.RawStdEncoding.DecodeString(data.Screenshot); err2 == nil {
 			return d2, nil
 		}
-		return []byte(data.Screenshot), nil
+		return nil, fmt.Errorf("invalid screenshot encoding: %w", err)
 	}
 	return decoded, nil
 }
