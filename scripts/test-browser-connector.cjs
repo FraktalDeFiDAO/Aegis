@@ -149,11 +149,23 @@ async function main(){
  console.log('PASS controller policy self-grant and arbitrary evaluation are rejected');
 
  // Set up manual approval locally, then click the real extension popup buttons.
- const workerTarget=(await browserCDP.call('Target.getTargets')).targetInfos.find(target=>target.type==='service_worker'&&target.url.includes('/background.js'));
- assert.ok(workerTarget,'Extension service worker is missing');
+ // Chrome for Testing may ship unrelated component-extension workers also
+ // named background.js. Verify the manifest identity before touching test policy.
+ const workerTargets=(await browserCDP.call('Target.getTargets')).targetInfos.filter(target=>target.type==='service_worker'&&target.url.startsWith('chrome-extension://')&&target.url.includes('/background.js'));
+ let workerTarget,workerSession;
+ for(const candidate of workerTargets){
+  const session=(await browserCDP.call('Target.attachToTarget',{targetId:candidate.targetId,flatten:true})).sessionId;
+  const identity=await browserCDP.call('Runtime.evaluate',{expression:'chrome.runtime.getManifest().name',returnByValue:true},session);
+  if(!identity.exceptionDetails&&identity.result?.value===manifest.name){workerTarget=candidate;workerSession=session;break;}
+  await browserCDP.call('Target.detachFromTarget',{sessionId:session});
+ }
+ assert.ok(workerTarget,'Aegis extension service worker is missing');
  const extensionBase=workerTarget.url.replace(/background\.js.*$/,'');
- const workerSession=(await browserCDP.call('Target.attachToTarget',{targetId:workerTarget.targetId,flatten:true})).sessionId;
- await browserCDP.call('Runtime.evaluate',{expression:`new Promise(resolve=>chrome.storage.local.set({aegisPolicy:{version:1,mode:'manual-approve',allow:[],deny:[],trustedScopes:[],defaultGateSensitive:true}},resolve))`,awaitPromise:true},workerSession);
+ const policySetup=await browserCDP.call('Runtime.evaluate',{expression:`new Promise(resolve=>chrome.storage.local.set({aegisPolicy:{version:1,mode:'manual-approve',allow:[],deny:[],trustedScopes:[],defaultGateSensitive:true}},resolve))`,awaitPromise:true,returnByValue:true},workerSession);
+ assert.equal(policySetup.exceptionDetails,undefined,'Manual policy setup failed: '+JSON.stringify(policySetup));
+ const observedPolicy=await browserCDP.call('Runtime.evaluate',{expression:'getPolicy()',awaitPromise:true,returnByValue:true},workerSession);
+ assert.equal(observedPolicy.exceptionDetails,undefined,'Manual policy read failed: '+JSON.stringify(observedPolicy));
+ assert.equal(observedPolicy.result?.value?.mode,'manual-approve','Policy transition was not applied: '+JSON.stringify(observedPolicy));
  const popupTarget=await browserCDP.call('Target.createTarget',{url:extensionBase+'popup.html'});
  const popupSession=(await browserCDP.call('Target.attachToTarget',{targetId:popupTarget.targetId,flatten:true})).sessionId;
  const clickApproval=async(approved,command)=>{
