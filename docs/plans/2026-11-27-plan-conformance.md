@@ -92,6 +92,11 @@ separate from unit/race test success. A green test suite alone does not establis
   browser helper 5, release planner 6 passed.
 - Isolated Chromium integration: passed, including authenticated connections,
   real popup approval/denial, strict targeting, transfers and full-page capture.
+  Remote CI exposed a Chrome-for-Testing 158 harness defect: a built-in extension
+  also had a `background.js` worker and was selected by filename alone. Reproduced
+  with CI's exact browser; fixed worker selection to verify the manifest name and
+  assert policy setup/readback before testing approvals. The complete suite then
+  passed locally on both system Chromium and Chrome for Testing 158.
 - `golangci-lint v1.64.8` (default linters, uncapped diagnostics): **failed**,
   79 diagnostics across production/tests: 67 errcheck, 4 gosimple, 4 unused,
   4 staticcheck (the latter include related-location diagnostics). No diagnostics
