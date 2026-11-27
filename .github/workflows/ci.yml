@@ -4,7 +4,7 @@ on:
   push:
     branches: [master, develop, 'release/**']
   pull_request:
-    branches: [master, develop]
+    branches: [master, develop, 'release/**']
 
 permissions:
   contents: read
@@ -35,10 +35,16 @@ jobs:
       - run: python3 skills/google-play-developer/scripts/test_plan_release.py
       - run: bash scripts/package-extension.sh
       - run: python3 scripts/verify-extension-package.py dist/extension/aegis-connector-chrome.zip
-      - name: Install Chromium for isolated connector integration
-        run: sudo apt-get update && sudo apt-get install -y chromium
+      - name: Install Chrome for Testing for isolated connector integration
+        id: browser
+        uses: browser-actions/setup-chrome@v2
+        with:
+          chrome-version: stable
+          install-dependencies: true
       - run: go build -o aegis ./cmd/aegis
       - run: node scripts/test-browser-connector.cjs ./aegis
+        env:
+          AEGIS_TEST_CHROMIUM: ${{ steps.browser.outputs.chrome-path }}
       - uses: actions/upload-artifact@v4
         with:
           name: browser-connector-candidate
