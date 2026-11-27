@@ -9,7 +9,7 @@ Covers browser-extension connector features implemented/planned per `docs/plans/
 |---|---:|---:|---|
 | Core control (nav/tabs/elements/cookies/storage/screenshot) | Primary | Best-effort | Internal pages (`chrome://`, `about:`) unsupported by extension APIs |
 | Authenticated protocol v1 handshake/correlation/progress-cancel hooks | Yes | Yes (best-effort) | Token-bearing hello required before registration/commands |
-| Runtime discovery/state (`~/.config/aegis/connector/runtime.json` or XDG) | Yes | Yes | Localhost-only; token stored owner-only (`0600`), generated per bridge start |
+| Runtime discovery/state (`~/.config/aegis/connector/runtime.json` or XDG) | Yes | Yes | Localhost-only; owner-only token, per-start generation, live-process lock, reconnect refresh |
 | Observability (debugger console/network/page state) | Best-effort, capability-gated | Limited/varies | `chrome.debugger` availability/UX differs; attach is explicit and may show indicator |
 | Tab groups (native) | Yes (`tabGroups`) | Fallback logical target set | Deterministic targeting should use explicit tab IDs when available |
 | Recording/workflows (local storage, replay, export/import CLI) | Best-effort | Best-effort | Sensitive-field redaction default; MV3 lifecycle can interrupt long sessions |
@@ -17,7 +17,8 @@ Covers browser-extension connector features implemented/planned per `docs/plans/
 | Downloads/uploads/visual evidence | Native file paths, streamed files, download retrieval; debugger/downloads gated | Streamed/payload uploads; native debugger controls unavailable | Same-machine filesystem for native paths/retrieval; stream one file up to 256 MiB |
 | Explicit frame targeting | Browser frame IDs, per-tab selection and per-command override | webNavigation/content-script route (not yet live verified) | Frame 0 explicitly selects top document; cross-origin Chromium tested |
 | Trusted input / native JS dialogs / full-page PNG | Debugger-backed mouse, keys, text, drag/drop, dialogs, capture | Unsupported | Browser/OS settings and arbitrary desktop control remain outside this layer |
-| Local policy modes & gating | Yes (deterministic) | Yes (deterministic) | Modes: `manual-approve`, `auto-with-prompts`, `unattended` (trusted scope). No classifier/prompt-injection screening |
+| Local policy modes & gating | One-time popup approvals and exact trusted scopes | Same implementation; live verification pending | Controllers cannot self-approve, change policy, or execute arbitrary JavaScript. No classifier/prompt-injection screening |
+| Arbitrary controller `evaluate`/`evaluateAll` | Removed | Removed | Dedicated page/element commands replace normal connector operations |
 
 ## Validation status (automated vs manual)
 

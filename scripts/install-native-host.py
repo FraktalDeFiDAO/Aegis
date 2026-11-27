@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Register the Aegis native host for a per-user Linux Chromium browser."""
+"""Register the Aegis native host for a per-user Chromium browser."""
 import argparse
 import json
 import os
@@ -9,8 +9,32 @@ import shutil
 import sys
 
 NAME = "com.aegis.bridge"
-BROWSERS = {"brave": "BraveSoftware/Brave-Browser", "chrome": "google-chrome", "chromium": "chromium"}
+BROWSERS = {
+    "linux": {"brave": "BraveSoftware/Brave-Browser", "chrome": "google-chrome", "chromium": "chromium"},
+    "darwin": {"brave": "BraveSoftware/Brave-Browser", "chrome": "Google/Chrome", "chromium": "Chromium"},
+    "windows": {"brave": "BraveSoftware/Brave-Browser/User Data", "chrome": "Google/Chrome/User Data", "chromium": "Chromium/User Data"},
+}
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def host_platform():
+    if sys.platform.startswith("linux"):
+        return "linux"
+    if sys.platform == "darwin":
+        return "darwin"
+    if sys.platform in ("win32", "cygwin"):
+        return "windows"
+    raise ValueError(f"Unsupported platform: {sys.platform}")
+
+
+def defaults(platform):
+    home = Path.home()
+    if platform == "darwin":
+        return home / "Library/Application Support", home / "Library/Application Support/Aegis"
+    if platform == "windows":
+        config = Path(os.environ.get("LOCALAPPDATA", home / "AppData/Local"))
+        return config, config / "Aegis"
+    return Path(os.environ.get("XDG_CONFIG_HOME", home / ".config")), home / ".local/lib/aegis"
 
 
 def installed_id(browser_dir, extension_dir):
@@ -30,35 +54,56 @@ def installed_id(browser_dir, extension_dir):
     return matches.pop()
 
 
+def windows_registration(browser):
+    return {
+        "brave": "Software\\BraveSoftware\\Brave-Browser\\NativeMessagingHosts\\" + NAME,
+        "chrome": "Software\\Google\\Chrome\\NativeMessagingHosts\\" + NAME,
+        "chromium": "Software\\Chromium\\NativeMessagingHosts\\" + NAME,
+    }[browser]
+
+
+def register_windows(registry_path, manifest_path):
+    import winreg
+    with winreg.CreateKey(winreg.HKEY_CURRENT_USER, registry_path) as key:
+        winreg.SetValueEx(key, "", 0, winreg.REG_SZ, str(manifest_path))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--browser", choices=BROWSERS, default="brave")
+    parser.add_argument("--browser", choices=BROWSERS["linux"], default="brave")
+    parser.add_argument("--platform", choices=BROWSERS, default=host_platform(), help=argparse.SUPPRESS)
     parser.add_argument("--extension-id")
     parser.add_argument("--extension-dir", type=Path, default=ROOT / "dist/extension/chrome")
-    parser.add_argument("--binary", type=Path, default=ROOT / "dist/aegis-native-host")
-    parser.add_argument("--config-home", type=Path, default=Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")))
-    parser.add_argument("--install-dir", type=Path, default=Path.home() / ".local/lib/aegis")
+    parser.add_argument("--binary", type=Path)
+    parser.add_argument("--config-home", type=Path)
+    parser.add_argument("--install-dir", type=Path)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
-    if not sys.platform.startswith("linux"):
-        parser.error("This installer currently supports Linux browsers only.")
-    browser_dir = args.config_home / BROWSERS[args.browser]
+    default_config, default_install = defaults(args.platform)
+    config_home = args.config_home or default_config
+    install_dir = args.install_dir or default_install
+    binary = args.binary or ROOT / "dist" / ("aegis-native-host.exe" if args.platform == "windows" else "aegis-native-host")
+    browser_dir = config_home / BROWSERS[args.platform][args.browser]
     try:
         extension_id = args.extension_id or installed_id(browser_dir, args.extension_dir)
         if not re.fullmatch("[a-p]{32}", extension_id):
             raise ValueError("Expected a Chromium extension ID (32 letters a through p).")
-        if not args.binary.is_file() or not os.access(args.binary, os.X_OK):
+        if not binary.is_file() or not os.access(binary, os.X_OK):
             raise ValueError("Build the native host first: go build -o dist/aegis-native-host ./cmd/aegis-native-host")
-        executable = args.install_dir.resolve() / "aegis-native-host"
-        manifest_path = browser_dir / "NativeMessagingHosts" / (NAME + ".json")
+        executable = install_dir.resolve() / ("aegis-native-host.exe" if args.platform == "windows" else "aegis-native-host")
+        if args.platform == "windows":
+            manifest_path = install_dir.resolve() / "NativeMessagingHosts" / (NAME + ".json")
+            registration = windows_registration(args.browser)
+        else:
+            manifest_path = browser_dir / "NativeMessagingHosts" / (NAME + ".json")
+            registration = manifest_path
         manifest = {"name": NAME, "description": "Starts the local Aegis browser bridge", "path": str(executable), "type": "stdio", "allowed_origins": [f"chrome-extension://{extension_id}/"]}
-        print(f"Extension ID: {extension_id}\nNative host: {executable}\nRegistration: {manifest_path}")
+        print(f"Extension ID: {extension_id}\nNative host: {executable}\nManifest: {manifest_path}\nRegistration: {registration}")
         if args.dry_run:
             return
         executable.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        # Replace atomically so reinstalling does not truncate a running host.
         temp_binary = executable.with_suffix(".tmp")
-        shutil.copyfile(args.binary, temp_binary)
+        shutil.copyfile(binary, temp_binary)
         temp_binary.chmod(0o700)
         temp_binary.replace(executable)
         manifest_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -66,6 +111,8 @@ def main():
         temp_manifest.write_text(json.dumps(manifest, indent=2) + "\n")
         temp_manifest.chmod(0o600)
         temp_manifest.replace(manifest_path)
+        if args.platform == "windows":
+            register_windows(registration, manifest_path)
         print("Installed. Reload Aegis in the browser extension manager to enable nativeMessaging and automatic startup.")
     except (OSError, ValueError) as exc:
         parser.exit(1, f"{exc}\n")

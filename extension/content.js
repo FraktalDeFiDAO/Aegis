@@ -8,8 +8,8 @@
 
 (() => {
   // Versioned guard permits updated content code after an extension reload.
-  if (window.__aegisContentScriptVersion === '1.1.2') return;
-  window.__aegisContentScriptVersion = '1.1.2';
+  if (window.__aegisContentScriptVersion === '1.2.0') return;
+  window.__aegisContentScriptVersion = '1.2.0';
   window.__aegisContentScriptLoaded = true;
 
   // ─── Command registry ──────────────────────────────────────────────────────
@@ -90,6 +90,8 @@
   on('reload', (params) => { window.location.reload(); return { reloaded: true }; });
   on('getCurrentUrl', () => ({ url: window.location.href }));
   on('getTitle', () => ({ title: document.title }));
+  on('page.html', () => ({ html: document.documentElement?.outerHTML || '' }));
+  on('page.text', () => ({ text: document.body?.innerText || '' }));
 
   // ─── Element queries ───────────────────────────────────────────────────────
   on('querySelector', (params) => {
@@ -124,6 +126,32 @@
     if (!el) return null;
     const rect = el.getBoundingClientRect();
     return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, top: rect.top, left: rect.left };
+  });
+  on('element.visible', (params) => {
+    const el = resolveElement(params);
+    return { visible: !!el && (el.offsetParent !== null || el.getClientRects().length > 0) };
+  });
+  on('element.property', (params) => {
+    const el = resolveElement(params);
+    if (!el) return { result: null };
+    const allowed = new Set(['tagName', 'value', 'checked', 'disabled', 'selected', 'href', 'src', 'type']);
+    if (!allowed.has(params.name)) throw new Error('property is not allowlisted');
+    if (params.name === 'value' && el.type === 'password') return { result: null, valueRedacted: true };
+    return { result: el[params.name] };
+  });
+  on('element.setAttribute', (params) => {
+    const el = resolveElement(params);
+    if (!el || typeof params.name !== 'string' || !params.name) throw new Error('element and attribute name required');
+    if (/^on/i.test(params.name) || /srcdoc/i.test(params.name)) throw new Error('event and srcdoc attributes are blocked');
+    if (/^(href|src|action|formaction)$/i.test(params.name) && /^\s*(javascript|data):/i.test(params.value || '')) throw new Error('active URL attributes are blocked');
+    el.setAttribute(params.name, params.value ?? '');
+    return { set: true };
+  });
+  on('element.remove', (params) => {
+    const el = resolveElement(params);
+    if (!el) throw new Error('element not found');
+    el.remove();
+    return { removed: true };
   });
 
   // ─── Interaction ───────────────────────────────────────────────────────────
@@ -341,28 +369,6 @@
     return new Promise((resolve) => setTimeout(() => resolve({ waited: ms }), ms));
   });
 
-  // ─── JavaScript execution ──────────────────────────────────────────────────
-  on('evaluate', (params) => {
-    const script = params.script || params.expression || '';
-    const fn = new Function(script);
-    const result = fn();
-    return { result: result !== undefined ? String(result) : null };
-  });
-
-  on('evaluateAll', (params) => {
-    const script = params.script || params.expression || '';
-    const results = [];
-    document.querySelectorAll(params.selector || '*').forEach((el, i) => {
-      try {
-        const fn = new Function('el', 'index', script);
-        results.push({ index: i, result: String(fn(el, i)) });
-      } catch (e) {
-        results.push({ index: i, error: e.message });
-      }
-    });
-    return { results };
-  });
-
   // ─── Screenshot (element only; full page uses background captureVisibleTab) ─
   on('screenshotElement', (params) => {
     const el = resolveElement(params);
@@ -382,7 +388,7 @@
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
       if (params.prefix && !key.startsWith(params.prefix)) continue;
-      data[key] = localStorage.getItem(key);
+      data[key] = params.includeValues === true ? localStorage.getItem(key) : '[REDACTED]';
     }
     return { data };
   });
@@ -399,7 +405,7 @@
     for (let i = 0; i < sessionStorage.length; i++) {
       const key = sessionStorage.key(i);
       if (params.prefix && !key.startsWith(params.prefix)) continue;
-      data[key] = sessionStorage.getItem(key);
+      data[key] = params.includeValues === true ? sessionStorage.getItem(key) : '[REDACTED]';
     }
     return { data };
   });

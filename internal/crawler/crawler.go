@@ -32,33 +32,34 @@ import (
 // Config holds the crawler configuration settings including target,
 // depth limits, and artifact capture options.
 type Config struct {
-	Target             string `yaml:"target"`             // Initial URL to start crawling from
-	MaxDepth           int    `yaml:"maxDepth"`           // Maximum recursion depth for link discovery
-	MaxPages           int    `yaml:"maxPages"`           // Maximum number of pages to crawl (0 = unlimited)
-	UserAgent          string `yaml:"userAgent"`          // Custom User-Agent string for the browser
-	Headless           bool   `yaml:"headless"`           // Whether to run browser in headless mode
-	Scroll             bool   `yaml:"scroll"`             // Enable scrolling to trigger lazy loading
-	WorkerCount        int    `yaml:"workerCount"`        // Number of concurrent worker goroutines
-	IncludeExternal    bool   `yaml:"includeExternal"`    // Allow crawling external domains
-	RenderVerify       string `yaml:"renderVerify"`       // Render verification mode: auto, never, always
-	RenderBorderLow    int    `yaml:"renderBorderLow"`    // Rendercheck borderline low score
-	RenderBorderHigh   int    `yaml:"renderBorderHigh"`   // Rendercheck borderline high score
-	RenderTextDeltaMin int    `yaml:"renderTextDeltaMin"` // Rendercheck visible text delta threshold
-	RenderMaxBytes     int64  `yaml:"renderMaxBytes"`     // Rendercheck/static HTML max bytes
-	ScreenshotPath     string `yaml:"screenshotPath"`     // Directory to save screenshots
-	DownloadPath       string `yaml:"downloadPath"`       // Directory to save downloaded files
-	EnableScreenshot   bool   `yaml:"enableScreenshot"`   // Global toggle for screenshot capture
-	EnableDownload     bool   `yaml:"enableDownload"`     // Global toggle for file downloads
-	AllowPrivateHosts  bool   `yaml:"allowPrivateHosts"`  // Allow localhost/private IP targets
-	PageTimeoutSeconds int    `yaml:"pageTimeoutSeconds"` // Page operation timeout in seconds
-	SessionKey         []byte `yaml:"sessionKey"`         // 32-byte AES-256 key for session storage
-	ConnectorMode      bool   `yaml:"connectorMode"`      // Use user's browser via extension
-	BridgeURL          string `yaml:"bridgeURL"`          // WebSocket URL of bridge server
-	BridgeToken        string `yaml:"-"`                  // In-memory bridge credential; never persisted in YAML
-	CaptureConsole     bool   `yaml:"captureConsole"`     // Capture console/page errors (connector, best-effort)
-	CaptureNetwork     bool   `yaml:"captureNetwork"`     // Capture network metadata (connector, best-effort)
-	CapturePageState   bool   `yaml:"capturePageState"`   // Capture bounded page snapshots (connector, best-effort)
-	CaptureDir         string `yaml:"captureDir"`         // Directory for capture artifacts
+	Target             string                  `yaml:"target"`             // Initial URL to start crawling from
+	MaxDepth           int                     `yaml:"maxDepth"`           // Maximum recursion depth for link discovery
+	MaxPages           int                     `yaml:"maxPages"`           // Maximum number of pages to crawl (0 = unlimited)
+	UserAgent          string                  `yaml:"userAgent"`          // Custom User-Agent string for the browser
+	Headless           bool                    `yaml:"headless"`           // Whether to run browser in headless mode
+	Scroll             bool                    `yaml:"scroll"`             // Enable scrolling to trigger lazy loading
+	WorkerCount        int                     `yaml:"workerCount"`        // Number of concurrent worker goroutines
+	IncludeExternal    bool                    `yaml:"includeExternal"`    // Allow crawling external domains
+	RenderVerify       string                  `yaml:"renderVerify"`       // Render verification mode: auto, never, always
+	RenderBorderLow    int                     `yaml:"renderBorderLow"`    // Rendercheck borderline low score
+	RenderBorderHigh   int                     `yaml:"renderBorderHigh"`   // Rendercheck borderline high score
+	RenderTextDeltaMin int                     `yaml:"renderTextDeltaMin"` // Rendercheck visible text delta threshold
+	RenderMaxBytes     int64                   `yaml:"renderMaxBytes"`     // Rendercheck/static HTML max bytes
+	ScreenshotPath     string                  `yaml:"screenshotPath"`     // Directory to save screenshots
+	DownloadPath       string                  `yaml:"downloadPath"`       // Directory to save downloaded files
+	EnableScreenshot   bool                    `yaml:"enableScreenshot"`   // Global toggle for screenshot capture
+	EnableDownload     bool                    `yaml:"enableDownload"`     // Global toggle for file downloads
+	AllowPrivateHosts  bool                    `yaml:"allowPrivateHosts"`  // Allow localhost/private IP targets
+	PageTimeoutSeconds int                     `yaml:"pageTimeoutSeconds"` // Page operation timeout in seconds
+	SessionKey         []byte                  `yaml:"sessionKey"`         // 32-byte AES-256 key for session storage
+	ConnectorMode      bool                    `yaml:"connectorMode"`      // Use user's browser via extension
+	BridgeURL          string                  `yaml:"bridgeURL"`          // WebSocket URL of bridge server
+	BridgeToken        string                  `yaml:"-" json:"-"`         // In-memory bridge credential; never serialized
+	BridgeDiscovery    func() (string, string) `yaml:"-" json:"-"`         // Refresh URL/credential after bridge restart
+	CaptureConsole     bool                    `yaml:"captureConsole"`     // Capture console/page errors (connector, best-effort)
+	CaptureNetwork     bool                    `yaml:"captureNetwork"`     // Capture network metadata (connector, best-effort)
+	CapturePageState   bool                    `yaml:"capturePageState"`   // Capture bounded page snapshots (connector, best-effort)
+	CaptureDir         string                  `yaml:"captureDir"`         // Directory for capture artifacts
 }
 
 // Crawler represents an authenticated web crawler instance that manages
@@ -95,7 +96,7 @@ func (c *Crawler) getBrowser() (*rod.Browser, error) {
 
 		var err error
 		if c.config.BridgeURL != "" {
-			c.connector, err = connector.Connect(c.config.BridgeURL, connector.WithToken(c.config.BridgeToken))
+			c.connector, err = connector.Connect(c.config.BridgeURL, connector.WithToken(c.config.BridgeToken), connector.WithReconnectDiscovery(c.config.BridgeDiscovery))
 		} else {
 			var addr string
 			c.connector, addr, err = connector.ConnectWithBridge("127.0.0.1")
@@ -740,7 +741,7 @@ func (c *Crawler) processPageWithConnector(urlStr, dumpPath string) (string, err
 	}
 	_ = page.WaitLoad()
 	if c.config.Scroll {
-		_, _ = page.SendRaw("evaluate", map[string]string{"script": "() => window.scrollTo(0, document.body.scrollHeight)"})
+		_, _ = page.SendRaw("scroll", map[string]int{"x": 0, "y": 1000000})
 		time.Sleep(300 * time.Millisecond)
 	}
 	html, err := page.HTML()

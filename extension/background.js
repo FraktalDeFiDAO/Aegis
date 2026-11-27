@@ -6,7 +6,7 @@
  */
 
 'use strict';
-if (typeof importScripts === 'function') importScripts('browser-control.js');
+if (typeof importScripts === 'function') importScripts('browser-control.js', 'local-approval.js');
 
 const PROTOCOL_VERSION = 1;
 const DEFAULT_PORT = 9876;
@@ -27,7 +27,6 @@ let dialogHandlers = new Map(); // tabId -> {resolve, reject}
 let eventQueue = [];
 let lastEventSeq = 0;
 let helloAcked = false;
-let pendingApprovals = new Map(); // requestId -> {resolve,reject}
 let activeTargetSet = { tabs: [], activeTabId: null, groupId: null };
 let nativePort = null;
 let nativeReadyPort = 0;
@@ -36,6 +35,14 @@ let nativeError = '';
 let connectionEnabled = true;
 const browserControl = AegisBrowserControl.create(chrome, {
   isDebugAttached: tabId => !!debugState.attachedTabs?.has(tabId)
+});
+const localApproval = AegisLocalApproval.create({
+  timeoutMs: 20000,
+  onPrompt: entry => {
+    emitPermissionPrompt(entry.command, {}, entry.tabId, entry.reason, true).catch(() => {});
+    notifyPopup({ type: 'approvalRequested', approval: entry });
+  },
+  onResolved: (entry, outcome) => notifyPopup({ type: 'approvalResolved', approvalId: entry.id, outcome }),
 });
 
 // ─── Storage keys ────────────────────────────────────────────────────────────
@@ -219,6 +226,7 @@ async function connectToBridge() {
     log('websocket closed', evt.code, evt.reason || '');
     ws = null;
     helloAcked = false;
+    localApproval.cancelAll('controller_disconnected');
     // Recheck/restart on the next attempt even if a reused manual bridge died.
     const hostPort = nativePort;
     nativePort = null;
@@ -237,6 +245,12 @@ function scheduleReconnect() {
 }
 
 function notifyPopup(msg) { chrome.runtime.sendMessage(msg).catch(() => {}); }
+
+function isLocalExtensionSender(sender) {
+  if (!sender) return false;
+  if (!sender.tab) return true;
+  return typeof sender.url === 'string' && sender.url.startsWith(chrome.runtime.getURL(''));
+}
 
 function sendHello() {
   const hello = {
@@ -286,7 +300,8 @@ function supportedCommands() {
     'querySelector','querySelectorAll','getElementText','getElementAttribute','getElementHtml',
     'click','doubleClick','rightClick','hover','type','fill','clear','press','select','scroll','scrollIntoView','focus','blur',
     'waitForSelector','waitForNavigation','waitForLoad','waitForIdle','waitForTimeout',
-    'evaluate','evaluateAll','screenshot','screenshotElement','captureVisibleTab',
+    'page.html','page.text','element.visible','element.property','element.setAttribute','element.remove',
+    'screenshot','screenshotElement','captureVisibleTab',
     'getCookies','setCookie','deleteCookie','clearCookies',
     'getLocalStorage','setLocalStorage','getSessionStorage','setSessionStorage',
     'switchFrame','switchMain','listFrames',
@@ -297,7 +312,7 @@ function supportedCommands() {
     'schedule.create','schedule.list','schedule.delete','schedule.runs',
     'download.start','download.wait','download.list','upload.file','upload.begin','upload.chunk','upload.finish','upload.cancel','upload.status',
     'input.click','input.drag','input.type','input.key','dialog.get','dialog.handle','screenshot.fullPage',
-    'policy.get','policy.set','approval.respond','audit.list','audit.report',
+    'policy.get','audit.list','audit.report',
     'target.get','target.set'
   ];
 }
@@ -365,6 +380,20 @@ function flushEventQueue() {
 }
 
 // ─── Command dispatch ────────────────────────────────────────────────────────
+async function authorizeCommand(command, params, tabId) {
+  const decision = await evaluatePolicy(command, params, tabId);
+  if (!decision.needsApproval) {
+    await appendAudit({ type: 'policy', outcome: decision.allowed ? 'allowed' : 'denied', command, tabId, reason: decision.reason || null, sensitive: SENSITIVE_COMMANDS.has(command) });
+    if (!decision.allowed) await emitPermissionPrompt(command, params, tabId, decision.reason, false);
+    return decision;
+  }
+  await appendAudit({ type: 'policy', outcome: 'approval_required', command, tabId, reason: decision.reason || 'approval required', sensitive: true });
+  const approved = await localApproval.authorize(command, tabId, decision);
+  approved.prompted = true;
+  await appendAudit({ type: 'policy', outcome: approved.allowed ? 'approved' : 'denied', command, tabId, approvalId: approved.approvalId, reason: approved.reason, sensitive: true });
+  return approved;
+}
+
 async function handleCommand(cmd) {
   const id = cmd.id || cmd.requestId;
   const command = cmd.command;
@@ -372,22 +401,12 @@ async function handleCommand(cmd) {
   const targetTabId = cmd.tabId || params.tabId || activeTargetSet.activeTabId || await getActiveTabId();
 
   try {
-    // Local policy gate (deterministic, best-effort)
-    const decision = await evaluatePolicy(command, params, targetTabId);
+    const decision = await authorizeCommand(command, params, targetTabId);
     if (!decision.allowed) {
-      await emitPermissionPrompt(command, params, targetTabId, decision.reason, false);
-      await appendAudit({ type: 'policy', outcome: 'denied', command, tabId: targetTabId, reason: decision.reason || 'denied by local policy' });
-      sendToBridge(structuredErrorResult(id, 'permission_denied', decision.reason || 'denied by local policy'));
-      return;
-    }
-    if (decision.needsApproval) {
-      await emitPermissionPrompt(command, params, targetTabId, decision.reason, true);
-      await appendAudit({ type: 'policy', outcome: 'approval_required', command, tabId: targetTabId, reason: decision.reason || 'approval required' });
-      sendToBridge(structuredErrorResult(id, 'permission_denied', 'approval required (manual/local policy); retry when allowed'));
+      sendToBridge(structuredErrorResult(id, decision.errorCode || 'permission_denied', decision.reason || 'denied by local policy'));
       return;
     }
 
-    await appendAudit({ type: 'policy', outcome: 'allowed', command, tabId: targetTabId, sensitive: !!(SENSITIVE_COMMANDS && SENSITIVE_COMMANDS.has && SENSITIVE_COMMANDS.has(command)) });
     const result = await executeCommand(command, params, targetTabId);
     if (activeRecording && !activeRecording.paused && !String(command).startsWith('record.') && !String(command).startsWith('workflow.') && command !== 'cancel') {
       try {
@@ -433,6 +452,7 @@ async function executeCommand(command, params, targetTabId) {
     // screenshots
     case 'captureVisibleTab':
     case 'screenshot':
+      if (params.fullPage === true) return await browserControl.screenshot(targetTabId, params);
       return await cmdCaptureVisibleTab(targetTabId, params);
     // dialogs
     case 'acceptDialog':
@@ -475,8 +495,6 @@ async function executeCommand(command, params, targetTabId) {
     case 'policy.get': return await cmdPolicyGet();
     case 'audit.list': return await cmdAuditList(params);
     case 'audit.report': return await cmdAuditReport(params);
-    case 'policy.set': return await cmdPolicySet(params);
-    case 'approval.respond': return await cmdApprovalRespond(params);
     // cancel passthrough
     case 'cancel': return { canceled: params.targetId || params.requestId || null, bestEffort: true };
     // recorder (forward to content script for action capture)
@@ -584,7 +602,9 @@ async function cmdGetCookies(params, tabId) {
     if (!seen.has(key)) {
       seen.add(key);
       unique.push({
-        name: c.name, value: c.value, domain: c.domain,
+        name: c.name,        value: params.includeValues === true ? c.value : undefined,
+        valueRedacted: params.includeValues !== true,
+        domain: c.domain,
         path: c.path, secure: c.secure, httpOnly: c.httpOnly,
         sameSite: c.sameSite, expires: c.expirationDate
       });
@@ -861,12 +881,14 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
 // ─── Popup + Content script message handlers ─────────────────────────────────
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || !msg.type) return false;
+  const uiOnlyMessages = ['getStatus', 'getPolicy', 'recordStart', 'recordPause', 'recordStop', 'recorderStatus'];
+  if (uiOnlyMessages.includes(msg.type) && !isLocalExtensionSender(sender)) return false;
   if (msg.type === 'getStatus') {
     sendResponse({ connected: !!(helloAcked && ws && ws.readyState === WebSocket.OPEN), helloAcked, bridgeHost, bridgeWsPort: nativeReadyPort || bridgeWsPort, nativeError, targetSet: activeTargetSet });
     return false;
   }
   if (msg.type === 'reconnect') {
-    if (sender.tab) return false;
+    if (!isLocalExtensionSender(sender)) return false;
     connectionEnabled = true;
     if (nativePort) { nativePort.disconnect(); nativePort = null; }
     nativeReadyPort = 0;
@@ -882,7 +904,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return false;
   }
   if (msg.type === 'disconnect') {
-    if (sender.tab) return false;
+    if (!isLocalExtensionSender(sender)) return false;
     connectionEnabled = false;
     if (nativePort) { nativePort.disconnect(); nativePort = null; }
     nativeReadyPort = 0;
@@ -894,12 +916,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     sendResponse({ ok: true });
     return false;
   }
+  if (msg.type === 'clearLocalData') {
+    if (!isLocalExtensionSender(sender)) return false;
+    clearStoredTaskData().then(() => sendResponse({ ok: true })).catch(error => sendResponse({ ok: false, error: error.message }));
+    return true;
+  }
+  if (msg.type === 'getApprovals') {
+    if (!isLocalExtensionSender(sender)) return false;
+    sendResponse({ approvals: localApproval.list() });
+    return false;
+  }
+  if (msg.type === 'resolveApproval') {
+    if (!isLocalExtensionSender(sender) || typeof msg.approved !== 'boolean') return false;
+    sendResponse({ ok: localApproval.resolve(msg.id, msg.approved) });
+    return false;
+  }
   if (msg.type === 'getPolicy') {
     getPolicy().then(p => sendResponse({ policy: p })).catch(() => sendResponse({ policy: defaultPolicy() }));
     return true;
   }
   if (msg.type === 'setPolicy') {
-    setPolicy(msg.policy || defaultPolicy()).then(() => sendResponse({ ok: true }));
+    if (!isLocalExtensionSender(sender)) return false;
+    const requested = msg.policy || defaultPolicy();
+    const trustedScopes = Array.isArray(requested.trustedScopes) ? requested.trustedScopes.filter(isValidScope) : [];
+    setPolicy({ ...defaultPolicy(), ...requested, trustedScopes }).then(() => sendResponse({ ok: true }));
     return true;
   }
   if (msg.type === 'recordStart') {
@@ -935,50 +975,73 @@ function log(...args) {
 const SENSITIVE_COMMANDS = new Set([
   'download.start','upload.begin','upload.chunk','upload.finish','upload.cancel',
   'input.click','input.drag','input.type','input.key','dialog.handle','screenshot.fullPage',
-  'evaluate','evaluateAll','getCookies','setCookie','deleteCookie','clearCookies',
+  'getCookies','setCookie','deleteCookie','clearCookies',
   'getLocalStorage','setLocalStorage','getSessionStorage','setSessionStorage',
   'debug.attach','debug.getConsole','debug.getNetwork','debug.getPageState','page.snapshot',
+  'page.html','page.text','querySelector','querySelectorAll','getElementText','getElementAttribute','getElementHtml','extractData',
+  'element.property','element.setAttribute','element.remove',
+  'captureVisibleTab','screenshot','screenshotElement',
   'download.wait','download.list','upload.file','navigate','newTab','closeTab','fill','type','click'
 ]);
-const ALWAYS_CONFIRM = new Set(['evaluate','evaluateAll','setCookie','deleteCookie','clearCookies','setLocalStorage','setSessionStorage','upload.file','upload.begin','upload.chunk','upload.finish','debug.attach']);
+const ALWAYS_CONFIRM = new Set(['setCookie','deleteCookie','clearCookies','setLocalStorage','setSessionStorage','upload.file','upload.begin','upload.chunk','upload.finish','debug.attach']);
 const HARD_BLOCK_URL_PREFIXES = ['chrome://','edge://','about:','brave://','moz-extension://internal'];
 
+const CONTROLLER_DISABLED_COMMANDS = new Set(['policy.set', 'approval.respond', 'evaluate', 'evaluateAll']);
+
+function isValidScope(scope) {
+  if (typeof scope !== 'string' || !scope || scope.includes('*')) return false;
+  try {
+    const rule = new URL(scope);
+    return ['http:', 'https:'].includes(rule.protocol) && !rule.username && !rule.password;
+  } catch (_) { return false; }
+}
+
+function scopeMatches(scope, rawURL) {
+  if (!isValidScope(scope) || !rawURL) return false;
+  try {
+    const rule = new URL(scope);
+    const target = new URL(rawURL);
+    if (rule.origin !== target.origin) return false;
+    const basePath = rule.pathname.replace(/\/+$/, '');
+    return !basePath || target.pathname === basePath || target.pathname.startsWith(basePath + '/');
+  } catch (_) { return false; }
+}
+
+function matchesAnyScope(scopes, rawURL) {
+  return Array.isArray(scopes) && scopes.some(scope => scopeMatches(scope, rawURL));
+}
+
 async function evaluatePolicy(command, params, tabId) {
+  if (CONTROLLER_DISABLED_COMMANDS.has(command)) {
+    return { allowed: false, needsApproval: false, reason: 'controller cannot change local policy, resolve approvals, or execute arbitrary JavaScript' };
+  }
   const p = await getPolicy();
-  // Global metadata/workspace operations do not read the selected page DOM.
   const globalCommands = new Set(['listTabs', 'listTabGroups', 'target.get', 'extension.info', 'newTab']);
-  // Page operations remain blocked on internal browser pages.
+  let targetURL = (params && (params.url || params.href)) || '';
   try {
     if (tabId && !globalCommands.has(command)) {
-      const t = await chrome.tabs.get(tabId);
-      const u = (t && t.url) || '';
-      if (HARD_BLOCK_URL_PREFIXES.some((x) => u.startsWith(x))) {
-        return { allowed: false, needsApproval: false, reason: 'internal/unsupported page blocked by policy' };
-      }
+      const tab = await chrome.tabs.get(tabId);
+      targetURL = targetURL || (tab && tab.url) || '';
     }
   } catch (_) {}
-  const url = (params && (params.url || params.href)) || '';
-  if (url && HARD_BLOCK_URL_PREFIXES.some((x) => url.startsWith(x))) {
-    return { allowed: false, needsApproval: false, reason: 'internal/unsupported URL blocked by policy' };
+  if (targetURL && HARD_BLOCK_URL_PREFIXES.some(prefix => targetURL.startsWith(prefix))) {
+    return { allowed: false, needsApproval: false, reason: 'internal/unsupported page or destination blocked by policy' };
   }
-  // deny list
-  if (Array.isArray(p.deny) && url && p.deny.some((d) => url.includes(d))) return { allowed: false, needsApproval: false, reason: 'denied by site policy' };
-  // mode handling (deterministic; no classifier)
-  const sensitive = SENSITIVE_COMMANDS.has(command) || (p.defaultGateSensitive && ALWAYS_CONFIRM.has(command));
+  if (matchesAnyScope(p.deny, targetURL)) {
+    return { allowed: false, needsApproval: false, reason: 'denied by site policy' };
+  }
+  const exposesSecretValues = (command === 'getCookies' || command === 'getLocalStorage' || command === 'getSessionStorage') && params.includeValues === true;
+  const alwaysConfirm = ALWAYS_CONFIRM.has(command) || exposesSecretValues;
+  const sensitive = SENSITIVE_COMMANDS.has(command) || (p.defaultGateSensitive && alwaysConfirm);
   if (!sensitive) return { allowed: true, needsApproval: false };
   if (p.mode === 'unattended') {
-    if (ALWAYS_CONFIRM.has(command) && !(Array.isArray(p.trustedScopes) && p.trustedScopes.includes('*'))) {
-      return { allowed: true, needsApproval: false, reason: 'unattended trusted scope (best-effort)' };
-    }
-    return { allowed: true, needsApproval: false };
+    if (matchesAnyScope(p.trustedScopes, targetURL)) return { allowed: true, needsApproval: false, reason: 'matched local trusted scope' };
+    return { allowed: false, needsApproval: true, reason: 'unattended mode requires an exact trusted origin/path scope' };
   }
   if (p.mode === 'auto-with-prompts') {
-    const allowedByScope = Array.isArray(p.allow) && url && p.allow.some((a) => url.includes(a));
-    if (allowedByScope && !ALWAYS_CONFIRM.has(command)) return { allowed: true, needsApproval: false };
-    // require approval (cannot prompt user unattended) -> deny with explicit reason
+    if (matchesAnyScope(p.allow, targetURL) && !alwaysConfirm) return { allowed: true, needsApproval: false };
     return { allowed: false, needsApproval: true, reason: 'approval required by local policy mode auto-with-prompts' };
   }
-  // manual-approve
   return { allowed: false, needsApproval: true, reason: 'approval required by local policy mode manual-approve' };
 }
 
@@ -1199,7 +1262,7 @@ async function cmdRecordStop() {
 }
 async function saveWorkflowRecord(rec) {
   const store = await getStore(WORKFLOWS_KEY, []);
-  store.push({ id: rec.id, name: rec.name || rec.id, createdAt: rec.startedAt, steps: rec.steps, version: 1 });
+  store.push(redactObject({ id: rec.id, name: rec.name || rec.id, createdAt: rec.startedAt, steps: rec.steps, version: 1 }));
   await setStore(WORKFLOWS_KEY, store.slice(-100));
 }
 
@@ -1219,7 +1282,7 @@ async function cmdWorkflowDelete(params) {
   return { deleted: id };
 }
 async function cmdWorkflowSave(params) {
-  const wf = params && (params.workflow || params);
+  const wf = redactObject(params && (params.workflow || params));
   if (!wf) throw new Error('workflow required');
   if (!wf.id) wf.id = 'wf-' + Date.now();
   if (!wf.version) wf.version = 1;
@@ -1245,18 +1308,17 @@ async function cmdWorkflowRun(params, tabId) {
     const t0 = Date.now();
     try {
       const target = s.tabId || s.params?.tabId || tabId;
-      const decision = await evaluatePolicy(s.command, s.params || {}, target);
-      if (!decision.allowed || decision.needsApproval) {
-        await appendAudit({ type: 'policy', outcome: 'denied', command: s.command, tabId: target, reason: decision.reason || 'workflow step requires approval' });
-        throw Object.assign(new Error(decision.reason || 'workflow step requires approval'), { code: 'permission_denied' });
+      const decision = await authorizeCommand(s.command, s.params || {}, target);
+      if (!decision.allowed) {
+        throw Object.assign(new Error(decision.reason || 'workflow step requires approval'), { code: decision.errorCode || 'permission_denied' });
       }
       const r = await executeCommand(s.command, s.params || {}, target);
       trace.push({ i, command: s.command, ok: true, ms: Date.now()-t0 });
       // Capture screenshot after navigation/click actions if enabled
       if (screenshots && (s.command === 'navigate' || s.command === 'click' || s.command === 'fill' || s.command === 'type')) {
         try {
-          const canCapture = await evaluatePolicy('page.snapshot', { maxChars: 5000 }, target);
-          if (canCapture.allowed && !canCapture.needsApproval) {
+          const canCapture = await authorizeCommand('page.snapshot', { maxChars: 5000 }, target);
+          if (canCapture.allowed) {
             const snap = await executeCommand('page.snapshot', { maxChars: 5000 }, target);
             if (snap) screenshots.push({ step: i, command: s.command, snapshot: snap, ts: Date.now() });
           }
@@ -1283,7 +1345,7 @@ async function cmdScheduleCreate(params) {
     name: params && params.name,
     workflowId: params && params.workflowId,
     command: params && params.command,
-    params: params && params.params || {},
+    params: redactObject(params && params.params || {}),
     intervalMinutes: Math.max(1, parseInt(params && params.intervalMinutes) || 60),
     enabled: params && params.enabled !== false,
     nextRunAt: Date.now() + Math.max(1, parseInt(params && params.intervalMinutes) || 60) * 60000,
@@ -1348,8 +1410,8 @@ async function runScheduleByAlarm(alarmName) {
     if (s.workflowId) result = await cmdWorkflowRun({ id: s.workflowId, captureScreenshots: true }, activeTargetSet.activeTabId);
     else if (s.command) {
       const target = s.params?.tabId || activeTargetSet.activeTabId || await getActiveTabId();
-      const decision = await evaluatePolicy(s.command, s.params || {}, target);
-      if (!decision.allowed || decision.needsApproval) throw new Error(decision.reason || 'schedule denied by local policy');
+      const decision = await authorizeCommand(s.command, s.params || {}, target);
+      if (!decision.allowed) throw Object.assign(new Error(decision.reason || 'schedule denied by local policy'), { code: decision.errorCode || 'permission_denied' });
       result = await executeCommand(s.command, s.params || {}, target);
     }
     await appendRun({ id: 'run-'+Date.now(), type: 'schedule', scheduleId: id, status: 'completed', ts: Date.now(), trace: result?.trace, screenshots: result?.screenshots });
@@ -1365,20 +1427,40 @@ async function runScheduleByAlarm(alarmName) {
 
 async function cmdAuditList(params) { const limit = Math.max(1, Math.min(parseInt(params && params.limit) || 200, 1000)); const audit = await getStore(AUDIT_KEY, []); return { audit: audit.slice(-limit) }; }
 async function cmdPolicyGet() { return { policy: await getPolicy() }; }
-async function cmdPolicySet(params) { const p = { ...defaultPolicy(), ...(params && (params.policy || params) || {}) }; await setPolicy(p); return { policy: p }; }
-async function cmdApprovalRespond(params) { return { ok: true, note: 'interactive approvals not available in unattended mode; update policy explicitly' }; }
 
 // ─── Storage helpers ─────────────────────────────────────────────────────────
+async function clearStoredTaskData() {
+  const schedules = await getStore(SCHEDULES_KEY, []);
+  for (const schedule of schedules) {
+    try { if (chrome.alarms) await chrome.alarms.clear('aegis_sched_' + schedule.id); } catch (_) {}
+  }
+  await new Promise((resolve, reject) => chrome.storage.local.remove([WORKFLOWS_KEY, RUNS_KEY, AUDIT_KEY, SCHEDULES_KEY, TARGET_KEY], () => {
+    if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+    else resolve();
+  }));
+  activeTargetSet = { tabs: [], activeTabId: null, groupId: null };
+  activeRecording = null;
+  localApproval.cancelAll('local_data_cleared');
+}
+
 async function getStore(key, def) { return new Promise((resolve)=>chrome.storage.local.get(key,(r)=>resolve(r[key]!==undefined?r[key]:def))); }
 async function setStore(key, val) { return new Promise((resolve)=>chrome.storage.local.set({[key]:val},resolve)); }
-async function appendRun(run) { const runs = await getStore(RUNS_KEY, []); runs.push(run); await setStore(RUNS_KEY, runs.slice(-200)); }
-async function appendAudit(entry) { const audit = await getStore(AUDIT_KEY, []); audit.push({ ts: Date.now(), ...(entry||{}) }); await setStore(AUDIT_KEY, audit.slice(-500)); }
+async function appendRun(run) { const runs = await getStore(RUNS_KEY, []); runs.push(redactObject(run)); await setStore(RUNS_KEY, runs.slice(-200)); }
+async function appendAudit(entry) { const audit = await getStore(AUDIT_KEY, []); audit.push(redactObject({ ts: Date.now(), ...(entry||{}) })); await setStore(AUDIT_KEY, audit.slice(-500)); }
 
 function redactObject(obj) {
   try {
     const s = JSON.stringify(obj, (k,v)=>{
       if (typeof k === 'string' && /authorization|cookie|token|secret|password|session/i.test(k)) return '[REDACTED]';
-      if (typeof v === 'string' && v.length > 2000) return v.slice(0,2000)+'…';
+      if (typeof v === 'string') {
+        let value = v
+          .replace(/-----BEGIN [^-]+-----[\s\S]+?-----END [^-]+-----/g, '[REDACTED_PRIVATE_KEY]')
+          .replace(/\b(AKIA|ASIA)[A-Z0-9]{16}\b/g, '[REDACTED_AWS_KEY]')
+          .replace(/\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g, '[REDACTED_JWT]')
+          .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]+=*/gi, '[REDACTED_BEARER]');
+        if (value.length > 2000) value = value.slice(0, 2000) + '…';
+        return value;
+      }
       return v;
     });
     return JSON.parse(s);

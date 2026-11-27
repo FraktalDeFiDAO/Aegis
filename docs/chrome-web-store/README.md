@@ -1,4 +1,6 @@
-# Chrome Web Store candidate 1.1.2
+# Chrome Web Store candidate 1.2.0
+
+Current local verification: `docs/chrome-web-store/verification-2026-11-27.md`.
 
 Status: **not ready for public submission**. ZIP preparation and automated
 verification do not establish Web Store policy compliance or approval.
@@ -13,36 +15,38 @@ the CLI reads it from the owner-only runtime state file. Failed authentication
 cannot replace an authenticated connection, and restarting the bridge rotates
 the credential. See verification-2026-11-26.md for the executed tests.
 
+## Completed security and release hardening
+
+- Real one-time popup approvals cover direct commands, workflows, schedules, and
+  captures. Controllers cannot call `policy.set` or `approval.respond`; unattended
+  work requires exact trusted origins/paths. Wildcards are rejected.
+- Arbitrary `evaluate`/`evaluateAll` was removed. Basic operations use dedicated
+  commands; debugger helpers use fixed local expressions rather than controller
+  script. `activeTab` was removed and every remaining permission is justified.
+- Cookie/browser-storage values require explicit inclusion. Persisted records use
+  sensitive-key/common-token redaction and bounded retention, and the popup has a
+  task-data deletion action. `/info` requires bearer authentication.
+- Discovery has a live-process lock, stale recovery, mandatory owner-only writes,
+  and reconnect refresh for rotated URL/token state.
+- `assets/screenshot-01.png` is a genuine isolated 1280x800 approval screenshot.
+- Linux/macOS/Windows native-host registration is implemented and tested at the
+  path/dry-run level. `scripts/build-release.py` produces platform packages and
+  SHA256SUMS; the manual matrix workflow packages without publishing.
+- CI now includes full-repo race tests and the isolated Chromium approval suite.
+
 ## Required before public submission
 
-- Complete local approval enforcement: `approval.respond` is a placeholder,
-  `policy.set` is callable by the bridge, and unattended/trusted scope behavior is
-  broad. A controller must not be able to grant itself permission. Audit every
-  dispatch path, recording, workflow, schedule, debugger and transfer command.
-- Review `evaluate`/`evaluateAll` and debugger command execution with MV3 remote
-  code rules. Do not certify “no remote code” until arbitrary code execution from
-  the controller is removed or shown to comply with official policy.
-- Review secret handling in stored workflows, recordings, console/network events,
-  and screenshots. Key-name redaction does not guarantee that values and page
-  contents contain no secrets. Publish truthful retention and deletion details.
-- Minimize permissions, considering optional cookie/debugger/site access.
-  `activeTab` is potentially redundant with broad host access; remove any
-  permission without a demonstrated feature need. See permissions.md.
-- Finalize the publisher identity, support contact, public privacy-policy URL,
-  data-use disclosures, countries/audience, and account verification. Confirm
-  whether any downstream AI services receive page data; their processing must be
-  explained. The draft privacy policy is not a completed legal declaration.
-- Provide at least one genuine, sanitized 1280x800 or 640x400 product screenshot.
-  The existing 128px icon is packaged. Do not use private Play Console imagery.
-- Provide installable native-host/CLI releases with checksums and support policy.
-  Current automatic native-host installer supports Linux only. Windows/macOS
-  installers and live Chrome testing remain outstanding. Do not advertise those
-  platforms as automatically supported.
-- Use the **store-assigned extension ID** to register native messaging. The
-  unpacked development ID is not the public store ID. Pass the store ID through
-  `install-native-host.py --extension-id ID` and test a clean installation.
-- Review and merge the release PR after CI succeeds. Protect master with required
-  CI/review in repository settings; branch protection is not installed by code.
+- Confirm the publisher's legal identity, store account verification, support
+  contact, countries/audience, and any jurisdiction-specific declarations. The
+  privacy policy and reserved GitHub URL are prepared, but legal review and the
+  downstream AI configuration disclosure remain publisher responsibilities.
+- Use the **store-assigned extension ID** to register native messaging. Run a
+  clean store-installed test with the final companion and verify popup approval,
+  denial, trusted scopes, and deletion. Live Windows/macOS behavior remains
+  unverified; do not advertise it as manually verified until tested.
+- Push the final reviewed commit, require green CI including Chromium, run the
+  manual release-candidate matrix, review/merge the release PR, and enable master
+  branch protection. These external actions cannot be completed by local code.
 
 ## Build and verify
 
@@ -51,7 +55,7 @@ From repository root, with Go matching go.mod, Python 3, Node 24, and zip:
 ```sh
 go test ./...
 go vet ./...
-go test -race ./cmd/aegis ./internal/connector/... ./internal/nativehost
+go test -race ./...
 node --test extension/tests/*.test.cjs
 python3 scripts/test-install-native-host.py
 python3 scripts/test-install-browser-skill.py
@@ -61,6 +65,8 @@ go build -o aegis ./cmd/aegis
 node scripts/test-browser-connector.cjs ./aegis
 bash scripts/package-extension.sh
 python3 scripts/verify-extension-package.py dist/extension/aegis-connector-chrome.zip
+python3 scripts/build-release.py
+node scripts/capture-store-screenshot.cjs ./aegis
 ```
 
 The browser integration runner uses a separate Chromium profile and local fixture
@@ -69,7 +75,7 @@ browser/OS. `AEGIS_TEST_CHROMIUM` selects the test executable (see runner).
 
 Package: `dist/extension/aegis-connector-chrome.zip`, with `manifest.json` at root.
 Generated files stay out of Git; CI uploads the candidate ZIP as a workflow
-artifact. Do not tag 1.1.2 as a public release while blockers remain.
+artifact. Do not tag 1.2.0 as a public release while blockers remain.
 
 ## Listing draft
 
@@ -94,7 +100,7 @@ system desktop or browser security pages.
 
 Category candidate: Developer Tools. Language: English.
 Support/repository: https://github.com/FraktalDeFiDAO/Aegis
-Privacy URL: pending publisher confirmation and hosting.
+Privacy URL: https://github.com/FraktalDeFiDAO/Aegis/blob/master/docs/chrome-web-store/privacy-policy.md (available after merge).
 
 ## Reviewer test instructions draft
 

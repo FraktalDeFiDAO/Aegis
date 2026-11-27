@@ -37,10 +37,14 @@ type Connector struct {
 	token   string
 	writeMu sync.Mutex
 
-	mu       sync.RWMutex
-	pages    map[int]*Page
-	activeID int
-	closed   bool
+	reconnectDiscovery func() (string, string)
+	reconnectMu        sync.Mutex
+
+	mu            sync.RWMutex
+	pages         map[int]*Page
+	activeID      int
+	closed        bool
+	authenticated bool
 
 	pendingMu sync.Mutex
 	pending   map[string]*pendingCall
@@ -59,9 +63,10 @@ type Connector struct {
 
 // Config holds configuration for the connector.
 type Config struct {
-	BridgeURL string // ws://127.0.0.1:<port>/ws
-	Logger    *slog.Logger
-	Token     string
+	BridgeURL          string // ws://127.0.0.1:<port>/ws
+	Logger             *slog.Logger
+	Token              string
+	ReconnectDiscovery func() (string, string)
 }
 
 // Option configures the connector.
@@ -75,6 +80,12 @@ func WithLogger(l *slog.Logger) Option {
 // WithToken sets the shared credential used during the hello handshake.
 func WithToken(token string) Option {
 	return func(c *Config) { c.Token = token }
+}
+
+// WithReconnectDiscovery refreshes the bridge URL and credential on reconnect.
+// The callback runs only when a reconnect is attempted and must not log secrets.
+func WithReconnectDiscovery(discover func() (string, string)) Option {
+	return func(c *Config) { c.ReconnectDiscovery = discover }
 }
 
 // Connect creates a Connector and connects to the bridge server.
@@ -93,13 +104,14 @@ func Connect(wsURL string, opts ...Option) (*Connector, error) {
 	}
 
 	c := &Connector{
-		wsURL:     wsURL,
-		wsConn:    conn,
-		logger:    cfg.Logger,
-		token:     cfg.Token,
-		pages:     make(map[int]*Page),
-		pending:   make(map[string]*pendingCall),
-		helloDone: make(chan struct{}),
+		wsURL:              wsURL,
+		wsConn:             conn,
+		logger:             cfg.Logger,
+		token:              cfg.Token,
+		reconnectDiscovery: cfg.ReconnectDiscovery,
+		pages:              make(map[int]*Page),
+		pending:            make(map[string]*pendingCall),
+		helloDone:          make(chan struct{}),
 	}
 
 	go c.readLoop()
@@ -152,10 +164,14 @@ func (c *Connector) readLoop() {
 		if err != nil {
 			c.mu.RLock()
 			closed = c.closed
+			current := c.wsConn
 			c.mu.RUnlock()
-			if closed {
+			if closed || current != ws {
 				return
 			}
+			c.mu.Lock()
+			c.authenticated = false
+			c.mu.Unlock()
 			c.logger.Error("bridge read error", "error", err)
 			c.failAllPending(&bridge.ErrorInfo{Code: bridge.ErrCodeDisconnected, Message: err.Error()})
 			go c.reconnectLoop()
@@ -184,6 +200,7 @@ func (c *Connector) readLoop() {
 			_ = c.writeJSON(bridge.Pong{ID: m.ID, Type: bridge.MsgPong, Timestamp: time.Now().UnixMilli()})
 		case *bridge.HelloAck:
 			c.mu.Lock()
+			c.authenticated = m.OK
 			if !m.OK {
 				c.helloErr = errors.New("bridge rejected authentication")
 				if m.Error != nil && m.Error.Message != "" {
@@ -211,16 +228,23 @@ func (c *Connector) writeJSON(v interface{}) error {
 	c.mu.RLock()
 	ws := c.wsConn
 	closed := c.closed
+	authenticated := c.authenticated
 	c.mu.RUnlock()
 	if closed || ws == nil {
 		return fmt.Errorf("not connected")
+	}
+	if _, isHello := v.(bridge.Hello); !isHello && !authenticated {
+		return fmt.Errorf("bridge authentication is not complete")
 	}
 	_ = ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	return ws.WriteJSON(v)
 }
 
 func (c *Connector) sendHello(resumeFrom int64) error {
-	hello := bridge.Hello{Type: bridge.MsgHello, Client: "aegis", Version: bridge.ProtocolVersion, ResumeFrom: resumeFrom, Token: c.token, Timestamp: time.Now().UnixMilli(), Capabilities: &bridge.Capabilities{Commands: []string{}}}
+	c.mu.RLock()
+	token := c.token
+	c.mu.RUnlock()
+	hello := bridge.Hello{Type: bridge.MsgHello, Client: "aegis", Version: bridge.ProtocolVersion, ResumeFrom: resumeFrom, Token: token, Timestamp: time.Now().UnixMilli(), Capabilities: &bridge.Capabilities{Commands: []string{}}}
 	if err := c.writeJSON(hello); err != nil {
 		return err
 	}
@@ -312,21 +336,30 @@ func (c *Connector) handleEvent(evt *bridge.Event) {
 }
 
 func (c *Connector) reconnectLoop() {
+	if !c.reconnectMu.TryLock() {
+		return
+	}
+	defer c.reconnectMu.Unlock()
 	delay := 1 * time.Second
 	for i := 0; i < 8; i++ {
 		c.mu.RLock()
 		closed := c.closed
+		wsURL := c.wsURL
+		token := c.token
 		c.mu.RUnlock()
 		if closed {
 			return
 		}
-		time.Sleep(jitter(delay))
-		conn, _, err := websocket.DefaultDialer.Dial(c.wsURL, nil)
-		if err != nil {
-			delay *= 2
-			if delay > 15*time.Second {
-				delay = 15 * time.Second
+		if c.reconnectDiscovery != nil {
+			if discoveredURL, discoveredToken := c.reconnectDiscovery(); discoveredURL != "" && discoveredToken != "" {
+				wsURL = discoveredURL
+				token = discoveredToken
 			}
+		}
+		time.Sleep(jitter(delay))
+		conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		if err != nil {
+			delay = min(15*time.Second, delay*2)
 			continue
 		}
 		c.mu.Lock()
@@ -338,20 +371,25 @@ func (c *Connector) reconnectLoop() {
 		if c.wsConn != nil {
 			_ = c.wsConn.Close()
 		}
+		c.wsURL = wsURL
+		c.token = token
 		c.wsConn = conn
+		c.authenticated = false
 		c.helloDone = make(chan struct{})
 		c.helloOnce = sync.Once{}
 		c.helloErr = nil
 		c.mu.Unlock()
 		go c.readLoop()
 		if err := c.sendHello(atomic.LoadInt64(&c.lastSeq)); err != nil {
-			c.logger.Error("reconnect authentication failed", "error", err)
-			_ = c.Close()
-			return
+			c.logger.Warn("reconnect authentication failed", "error", err)
+			_ = conn.Close()
+			delay = min(15*time.Second, delay*2)
+			continue
 		}
 		c.logger.Info("reconnected to bridge")
 		return
 	}
+	_ = c.Close()
 	c.logger.Error("reconnect attempts exhausted")
 }
 
@@ -594,6 +632,7 @@ func (c *Connector) Close() error {
 		return nil
 	}
 	c.closed = true
+	c.authenticated = false
 
 	if c.wsConn != nil {
 		return c.wsConn.Close()
@@ -621,7 +660,7 @@ func (c *Connector) GetRuntimeStateInfo() map[string]interface{} {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return map[string]interface{}{
-		"connected": c.wsConn != nil && !c.closed,
+		"connected": c.wsConn != nil && !c.closed && c.authenticated,
 		"wsURL":     c.wsURL,
 		"tabs":      len(c.pages),
 		"activeTab": c.activeID,

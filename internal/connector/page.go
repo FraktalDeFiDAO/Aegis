@@ -109,9 +109,7 @@ func (p *Page) Reload() error {
 
 // HTML returns the page's HTML content.
 func (p *Page) HTML() (string, error) {
-	result, err := p.connector.sendCommand(bridge.CmdEvaluate, map[string]string{
-		"script": "() => document.documentElement.outerHTML",
-	}, p.tabID)
+	result, err := p.connector.sendCommand(bridge.CmdPageHTML, nil, p.tabID)
 	if err != nil {
 		return "", err
 	}
@@ -119,12 +117,12 @@ func (p *Page) HTML() (string, error) {
 		return "", fmt.Errorf("get html: %s", result.Error)
 	}
 	var data struct {
-		Result string `json:"result"`
+		HTML string `json:"html"`
 	}
 	if err := json.Unmarshal(result.Data, &data); err != nil {
 		return "", err
 	}
-	return data.Result, nil
+	return data.HTML, nil
 }
 
 // MustHTML returns HTML and panics on error.
@@ -138,9 +136,7 @@ func (p *Page) MustHTML() string {
 
 // Text returns the visible text of the page.
 func (p *Page) Text() (string, error) {
-	result, err := p.connector.sendCommand(bridge.CmdEvaluate, map[string]string{
-		"script": "() => document.body.innerText",
-	}, p.tabID)
+	result, err := p.connector.sendCommand(bridge.CmdPageText, nil, p.tabID)
 	if err != nil {
 		return "", err
 	}
@@ -148,12 +144,12 @@ func (p *Page) Text() (string, error) {
 		return "", fmt.Errorf("get text: %s", result.Error)
 	}
 	var data struct {
-		Result string `json:"result"`
+		Text string `json:"text"`
 	}
 	if err := json.Unmarshal(result.Data, &data); err != nil {
 		return "", err
 	}
-	return data.Result, nil
+	return data.Text, nil
 }
 
 // Title returns the page title.
@@ -182,33 +178,15 @@ func (p *Page) URL() string {
 
 // ─── JavaScript ──────────────────────────────────────────────────────────────
 
-// Eval evaluates JavaScript on the page.
+// Eval is unavailable through the store-safe connector. Use a dedicated
+// navigation, DOM, storage, or capture command instead of arbitrary JavaScript.
 func (p *Page) Eval(js string, args ...interface{}) (*proto.RuntimeRemoteObject, error) {
-	result, err := p.connector.sendCommand(bridge.CmdEvaluate, map[string]string{
-		"script": js,
-	}, p.tabID)
-	if err != nil {
-		return nil, err
-	}
-	if !result.Success {
-		return nil, fmt.Errorf("eval: %s", result.Error)
-	}
-	return &proto.RuntimeRemoteObject{}, nil
+	return nil, fmt.Errorf("arbitrary JavaScript evaluation is not supported by the extension connector")
 }
 
-// Evaluate evaluates a script expression (simplified).
+// Evaluate returns nil because arbitrary JavaScript is not supported.
 func (p *Page) Evaluate(script *rod.EvalOptions) *rod.EvalOptions {
-	if script == nil {
-		return nil
-	}
-	result, err := p.connector.sendCommand(bridge.CmdEvaluate, map[string]string{
-		"script": script.JS,
-	}, p.tabID)
-	if err != nil {
-		return script
-	}
-	_ = result
-	return script
+	return nil
 }
 
 // EvalOnNewDocument registers a script to run on every new document.
@@ -231,7 +209,8 @@ func (p *Page) Cookies(urls []string) ([]*proto.NetworkCookie, error) {
 		}
 	}
 	result, err := p.connector.sendCommand(bridge.CmdGetCookies, map[string]interface{}{
-		"urls": urls,
+		"urls":          urls,
+		"includeValues": true,
 	}, p.tabID)
 	if err != nil {
 		return nil, err
@@ -310,21 +289,6 @@ func (p *Page) Screenshot(fullPage bool, params *proto.PageCaptureScreenshot) ([
 		}
 		if params.Quality > 0 {
 			cmdParams["quality"] = params.Quality
-		}
-	}
-
-	// For full page screenshots, use content script to get dimensions
-	if fullPage {
-		// First get page dimensions
-		dimResult, err := p.connector.sendCommand(bridge.CmdEvaluate, map[string]string{
-			"script": `() => JSON.stringify({ scrollHeight: document.body.scrollHeight, scrollWidth: document.body.scrollWidth, clientHeight: document.documentElement.clientHeight, clientWidth: document.documentElement.clientWidth })`,
-		}, p.tabID)
-		if err == nil && dimResult.Success {
-			// Scroll to bottom and capture
-			p.connector.sendCommand(bridge.CmdEvaluate, map[string]string{
-				"script": "() => window.scrollTo(0, document.body.scrollHeight)",
-			}, p.tabID)
-			time.Sleep(100 * time.Millisecond)
 		}
 	}
 
@@ -466,17 +430,19 @@ func (p *Page) Has(selector string) bool {
 
 // Visible returns true if the element is visible.
 func (p *Page) Visible(selector string) (bool, error) {
-	result, err := p.connector.sendCommand(bridge.CmdEvaluate, map[string]string{
-		"script": fmt.Sprintf(`() => { const el = document.querySelector('%s'); return el ? el.offsetParent !== null : false; }`, selector),
+	result, err := p.connector.sendCommand(bridge.CmdElementVisible, map[string]string{
+		"selector": selector,
 	}, p.tabID)
 	if err != nil {
 		return false, err
 	}
 	var data struct {
-		Result interface{} `json:"result"`
+		Visible bool `json:"visible"`
 	}
-	json.Unmarshal(result.Data, &data)
-	return fmt.Sprintf("%v", data.Result) == "true", nil
+	if err := json.Unmarshal(result.Data, &data); err != nil {
+		return false, err
+	}
+	return data.Visible, nil
 }
 
 // Hidden returns true if the element is hidden.

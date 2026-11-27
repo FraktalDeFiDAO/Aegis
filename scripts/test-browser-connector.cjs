@@ -64,7 +64,7 @@ async function main(){
  const extension=path.join(temp,'extension');await fs.cp(path.join(root,'extension'),extension,{recursive:true});
  const manifest=JSON.parse(await fs.readFile(path.join(extension,'manifest.chrome.json'),'utf8'));
  const workerFile=path.join(extension,'background.js');
- await fs.writeFile(workerFile,(await fs.readFile(workerFile,'utf8')).replace('const DEFAULT_PORT = 9876;',`const DEFAULT_PORT = ${bridgePort};`).replace("let bridgeToken = '';",`let bridgeToken = ${JSON.stringify(bridgeToken)};`).replace("bridgeToken = c.token || '';",'bridgeToken = c.token || bridgeToken;').replace("mode: 'manual-approve', //","mode: 'unattended', //"));
+ await fs.writeFile(workerFile,(await fs.readFile(workerFile,'utf8')).replace('const DEFAULT_PORT = 9876;',`const DEFAULT_PORT = ${bridgePort};`).replace("let bridgeToken = '';",`let bridgeToken = ${JSON.stringify(bridgeToken)};`).replace("bridgeToken = c.token || '';",'bridgeToken = c.token || bridgeToken;').replace("mode: 'manual-approve', //","mode: 'unattended', //").replace('trustedScopes: [],',`trustedScopes: [${JSON.stringify(fixtureURL)}],`));
  // Test-only profile uses a dedicated bridge and explicit fixture policy. It cannot launch a user's native host.
  manifest.permissions=manifest.permissions.filter(p=>p!=='nativeMessaging');await fs.writeFile(path.join(extension,'manifest.json'),JSON.stringify(manifest));
  const profile=path.join(temp,'profile');await fs.mkdir(profile);
@@ -78,7 +78,7 @@ async function main(){
  console.log('PASS wrong controller credential rejected');
  bridge=await RPC.connect(bridgeURL,bridgeToken);
  console.log('PASS isolated extension/bridge startup');
- const implementation=await bridge.command('extension.info');assert.equal(implementation.version,'1.1.2');assert.equal(implementation.features.strictCssTargets,true);
+ const implementation=await bridge.command('extension.info');assert.equal(implementation.version,'1.2.0');assert.equal(implementation.features.strictCssTargets,true);
  const tabs=await bridge.command('listTabs');const tab=tabs.tabs.find(t=>t.url===fixtureURL);assert.ok(tab,'Fixture tab is missing');
  await until(async()=>{try{return(await bridge.command('querySelector',{selector:'#file',frameId:0},tab.id)).found}catch{return false}},'fixture content script');
  const workspace=await bridge.command('createTabGroup',{tabIds:[tab.id],title:'Aegis',color:'blue'},tab.id);
@@ -142,18 +142,60 @@ async function main(){
  await run(binary,['connect','--connector','--bridge-url',bridgeURL,'download','--tab-id',String(tab.id),'--url',fixtureURL+'download','--output',downloaded]);
  assert.equal(sha(await fs.readFile(downloaded)),sha(payload));
  console.log('PASS browser download start, completion tracking, local retrieval and SHA-256');
- // Verify policy is a real gate in this isolated profile, without changing the user's policy.
- bridge=await RPC.connect(bridgeURL,bridgeToken);await bridge.command('policy.set',{policy:{mode:'manual-approve',defaultGateSensitive:true}},tab.id);await assert.rejects(bridge.command('download.start',{url:fixtureURL+'download'},tab.id),/permission_denied/);
+ // Controller self-grant and arbitrary evaluation are unavailable even in unattended mode.
+ bridge=await RPC.connect(bridgeURL,bridgeToken);
+ await assert.rejects(bridge.command('policy.set',{policy:{mode:'unattended',trustedScopes:['*']}},tab.id),/controller cannot/);
+ await assert.rejects(bridge.command('evaluate',{script:'() => 1'},tab.id),/controller cannot/);
+ console.log('PASS controller policy self-grant and arbitrary evaluation are rejected');
+
+ // Set up manual approval locally, then click the real extension popup buttons.
+ const workerTarget=(await browserCDP.call('Target.getTargets')).targetInfos.find(target=>target.type==='service_worker'&&target.url.includes('/background.js'));
+ assert.ok(workerTarget,'Extension service worker is missing');
+ const extensionBase=workerTarget.url.replace(/background\.js.*$/,'');
+ const workerSession=(await browserCDP.call('Target.attachToTarget',{targetId:workerTarget.targetId,flatten:true})).sessionId;
+ await browserCDP.call('Runtime.evaluate',{expression:`new Promise(resolve=>chrome.storage.local.set({aegisPolicy:{version:1,mode:'manual-approve',allow:[],deny:[],trustedScopes:[],defaultGateSensitive:true}},resolve))`,awaitPromise:true},workerSession);
+ const popupTarget=await browserCDP.call('Target.createTarget',{url:extensionBase+'popup.html'});
+ const popupSession=(await browserCDP.call('Target.attachToTarget',{targetId:popupTarget.targetId,flatten:true})).sessionId;
+ const clickApproval=async(approved,command)=>{
+  const approvalId=await until(async()=>{try{const result=await browserCDP.call('Runtime.evaluate',{expression:`localApproval.list().find(entry=>entry.command===${JSON.stringify(command)})?.id||''`,returnByValue:true},workerSession);return result.result?.value||false}catch{return false}},'worker approval request',10000);
+  const selector=`#approval-list [data-approval-id="${approvalId}"] ${approved?'.btn-connect':'.btn-disconnect'}`;
+  try{
+   await until(async()=>{try{const result=await browserCDP.call('Runtime.evaluate',{expression:`(()=>{const button=document.querySelector(${JSON.stringify(selector)});if(!button)return false;button.click();return true})()`,returnByValue:true},popupSession);return result.result?.value===true}catch{return false}},approved?'popup approval':'popup denial',10000);
+   return await until(async()=>{try{const result=await browserCDP.call('Runtime.evaluate',{expression:`!localApproval.list().some(entry=>entry.id===${JSON.stringify(approvalId)})`,returnByValue:true},workerSession);return result.result?.value===true}catch{return false}},'worker approval resolution',3000);
+  }catch(error){
+   const popupState=await browserCDP.call('Runtime.evaluate',{expression:'document.body.innerText',returnByValue:true},popupSession).catch(()=>null);
+   const workerState=await browserCDP.call('Runtime.evaluate',{expression:'(async()=>JSON.stringify({approvals:localApproval.list(),policy:await getPolicy()}))()',awaitPromise:true,returnByValue:true},workerSession).catch(()=>null);
+   console.error('Popup state:',JSON.stringify(popupState));console.error('Worker state:',JSON.stringify(workerState));throw error;
+  }
+ };
+ const deniedDownload=bridge.command('download.start',{url:fixtureURL+'download'},tab.id);
+ const deniedDownloadExpectation=assert.rejects(deniedDownload,/permission_denied/);
+ await clickApproval(false,'download.start');await deniedDownloadExpectation;
+ const approvedFill=bridge.command('fill',{frameId:0,selector:'#text',value:'Approved in popup'},tab.id);
+ await clickApproval(true,'fill');await approvedFill;
+ const approvedRead=bridge.command('element.property',{frameId:0,selector:'#text',name:'value'},tab.id);
+ await clickApproval(true,'element.property');
+ assert.equal((await approvedRead).result,'Approved in popup');
+ const approvedContentRead=bridge.command('getElementText',{frameId:0,selector:'#declaration-selected'},tab.id);
+ await clickApproval(true,'getElementText');
+ assert.equal((await approvedContentRead).text,'privacy');
+ console.log('PASS real popup denial blocks work and one-time approval permits the requested action');
  bridge.close();await delay(50);
  const rejectedFile=path.join(temp,'rejected.json');
- const rejected=await run(binary,['connect','--connector','--bridge-url',bridgeURL,'send','--command','click','--params',JSON.stringify({tabId:tab.id,selector:'#native'}),'--output',rejectedFile],false);
+ const rejectedPromise=run(binary,['connect','--connector','--bridge-url',bridgeURL,'send','--command','click','--params',JSON.stringify({tabId:tab.id,selector:'#native'}),'--output',rejectedFile],false);
+ await clickApproval(false,'click');const rejected=await rejectedPromise;
  assert.notEqual(rejected.code,0);assert.equal(JSON.parse(await fs.readFile(rejectedFile,'utf8')).success,false);
  console.log('PASS local policy denial is preserved and CLI saved errors return nonzero');
  bridge=await RPC.connect(bridgeURL,bridgeToken);
  const blockedWorkflow={id:'policy-regression',steps:[{command:'click',params:{selector:'#native',frameId:0}}]};
- await assert.rejects(bridge.command('workflow.run',{workflow:blockedWorkflow},tab.id),/permission_denied/);
- await assert.rejects(bridge.command('workflow.run',{workflow:blockedWorkflow,continueOnError:true},tab.id),/workflow_failed/);
+ const blockedOnce=bridge.command('workflow.run',{workflow:blockedWorkflow},tab.id);
+ const blockedOnceExpectation=assert.rejects(blockedOnce,/permission_denied/);
+ await clickApproval(false,'click');await blockedOnceExpectation;
+ const blockedContinued=bridge.command('workflow.run',{workflow:blockedWorkflow,continueOnError:true},tab.id);
+ const blockedContinuedExpectation=assert.rejects(blockedContinued,/workflow_failed/);
+ await clickApproval(false,'click');await blockedContinuedExpectation;
  console.log('PASS workflow replay enforces each command policy and reports failed steps as failure');
+ await browserCDP.call('Target.closeTarget',{targetId:popupTarget.targetId});
 
  console.log('All browser connector integration checks passed.');
 }

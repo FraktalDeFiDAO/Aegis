@@ -60,7 +60,8 @@ func (sb *SessionBridge) CaptureCookies() error {
 
 	for _, tab := range data.Tabs {
 		cookieResult, err := sb.connector.sendCommand(bridge.CmdGetCookies, map[string]interface{}{
-			"urls": []string{tab.URL},
+			"urls":          []string{tab.URL},
+			"includeValues": true,
 		}, tab.ID)
 		if err != nil {
 			continue
@@ -118,7 +119,7 @@ func (sb *SessionBridge) RestoreCookies() error {
 
 // CaptureLocalStorage captures localStorage from a tab.
 func (sb *SessionBridge) CaptureLocalStorage(tabID int) error {
-	result, err := sb.connector.sendCommand(bridge.CmdGetLocalStorage, nil, tabID)
+	result, err := sb.connector.sendCommand(bridge.CmdGetLocalStorage, map[string]interface{}{"includeValues": true}, tabID)
 	if err != nil {
 		return err
 	}
@@ -155,7 +156,7 @@ func (sb *SessionBridge) RestoreLocalStorage(tabID int) error {
 
 // CaptureSessionStorage captures sessionStorage from a tab.
 func (sb *SessionBridge) CaptureSessionStorage(tabID int) error {
-	result, err := sb.connector.sendCommand(bridge.CmdGetSessionStore, nil, tabID)
+	result, err := sb.connector.sendCommand(bridge.CmdGetSessionStore, map[string]interface{}{"includeValues": true}, tabID)
 	if err != nil {
 		return err
 	}

@@ -13,8 +13,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -45,9 +49,10 @@ type Server struct {
 	extCapsMu sync.RWMutex
 	token     string
 
-	runtimePath string
-	tokenErr    error
-	stopOnce    sync.Once
+	runtimePath   string
+	discoveryLock string
+	tokenErr      error
+	stopOnce      sync.Once
 }
 
 // pendingCommand tracks a command sent to the extension awaiting its result.
@@ -157,12 +162,27 @@ func (s *Server) startHTTP(ctx context.Context) (string, error) {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	go s.pingLoop(ctx)
-
 	addr := listener.Addr().String()
-	s.logger.Info("bridge server listening", "addr", addr)
-	_ = s.persistRuntimeState(addr)
+	runtimePath := s.discoveryPath()
+	if runtimePath == "" {
+		_ = listener.Close()
+		return "", fmt.Errorf("bridge discovery path is unavailable")
+	}
+	lock, err := acquireDiscoveryLock(runtimePath)
+	if err != nil {
+		_ = listener.Close()
+		return "", err
+	}
+	s.discoveryLock = lock
+	if err := s.persistRuntimeState(addr); err != nil {
+		_ = listener.Close()
+		_ = s.removeRuntimeState()
+		s.releaseDiscoveryLock()
+		return "", fmt.Errorf("persist bridge discovery: %w", err)
+	}
 
+	go s.pingLoop(ctx)
+	s.logger.Info("bridge server listening", "addr", addr)
 	go func() {
 		if err := s.server.Serve(listener); err != nil && err != http.ErrServerClosed {
 			s.logger.Error("server error", "error", err)
@@ -197,7 +217,10 @@ func (s *Server) Stop() error {
 			defer cancel()
 			stopErr = s.server.Shutdown(ctx)
 		}
-		_ = s.removeRuntimeState()
+		if err := s.removeRuntimeState(); stopErr == nil {
+			stopErr = err
+		}
+		s.releaseDiscoveryLock()
 	})
 	return stopErr
 }
@@ -670,8 +693,15 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(status)
 }
 
-// handleInfo returns detailed information about the bridge server state.
+// handleInfo returns detailed information to an authenticated local controller.
 func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
+	authorization := r.Header.Get("Authorization")
+	token := strings.TrimPrefix(authorization, "Bearer ")
+	if authorization == token || subtle.ConstantTimeCompare([]byte(token), []byte(s.token)) != 1 {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="aegis-bridge"`)
+		http.Error(w, "authentication required", http.StatusUnauthorized)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	info := map[string]interface{}{
 		"extensionConnected": s.IsExtensionConnected(),
@@ -709,13 +739,17 @@ type RuntimeState struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-func (s *Server) persistRuntimeState(addr string) error {
-	path := s.runtimePath
-	if path == "" {
-		path = defaultRuntimePath()
+func (s *Server) discoveryPath() string {
+	if s.runtimePath != "" {
+		return s.runtimePath
 	}
+	return defaultRuntimePath()
+}
+
+func (s *Server) persistRuntimeState(addr string) error {
+	path := s.discoveryPath()
 	if path == "" {
-		return nil
+		return fmt.Errorf("discovery path is unavailable")
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
@@ -729,14 +763,68 @@ func (s *Server) persistRuntimeState(addr string) error {
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return err
 	}
+	if err := os.Chmod(tmp, 0o600); err != nil {
+		return err
+	}
 	return os.Rename(tmp, path)
 }
 
-func (s *Server) removeRuntimeState() error {
-	path := s.runtimePath
-	if path == "" {
-		path = defaultRuntimePath()
+func acquireDiscoveryLock(path string) (string, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return "", err
 	}
+	lock := path + ".lock"
+	for attempt := 0; attempt < 2; attempt++ {
+		err := os.Mkdir(lock, 0o700)
+		if err == nil {
+			pid := []byte(strconv.Itoa(os.Getpid()))
+			if err := os.WriteFile(filepath.Join(lock, "pid"), pid, 0o600); err != nil {
+				_ = os.RemoveAll(lock)
+				return "", err
+			}
+			return lock, nil
+		}
+		if !os.IsExist(err) {
+			return "", err
+		}
+		raw, readErr := os.ReadFile(filepath.Join(lock, "pid"))
+		pid, parseErr := strconv.Atoi(string(raw))
+		if readErr == nil && parseErr == nil && discoveryProcessAlive(pid) {
+			return "", fmt.Errorf("another live bridge holds the discovery lock; stop it before starting a second bridge")
+		}
+		if err := os.RemoveAll(lock); err != nil {
+			return "", fmt.Errorf("reclaim stale discovery lock: %w", err)
+		}
+	}
+	return "", fmt.Errorf("could not acquire discovery lock")
+}
+
+func discoveryProcessAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	err = process.Signal(syscall.Signal(0))
+	if err == nil || err == syscall.EPERM {
+		return true
+	}
+	// Unknown Windows signal errors are treated as live so a running lock is
+	// never reclaimed underneath another process. Unix ESRCH is not live.
+	return runtime.GOOS == "windows"
+}
+
+func (s *Server) releaseDiscoveryLock() {
+	if s.discoveryLock != "" {
+		_ = os.RemoveAll(s.discoveryLock)
+		s.discoveryLock = ""
+	}
+}
+
+func (s *Server) removeRuntimeState() error {
+	path := s.discoveryPath()
 	if path == "" {
 		return nil
 	}

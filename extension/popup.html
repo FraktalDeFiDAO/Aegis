@@ -158,8 +158,22 @@
         <option value="unattended">unattended (trusted scope)</option>
       </select>
     </div>
+    <div class="input-group" style="margin:8px 0 0 0">
+      <label>Trusted origins/paths (comma separated)</label>
+      <input type="text" id="trusted-scopes" placeholder="https://example.com, https://example.org/app">
+    </div>
     <button class="btn btn-connect" id="btn-save-policy" style="margin-top:8px;padding:8px;font-size:12px;">Save Policy</button>
     <div id="policy-msg" style="font-size:11px;color:#888;margin-top:6px;min-height:14px;"></div>
+  </div>
+
+  <div class="status-card" id="approval-card" style="margin-top:12px;display:none">
+    <div class="status-row"><span class="status-label">Approval required</span></div>
+    <div id="approval-list"></div>
+  </div>
+
+  <div class="status-card" style="margin-top:12px">
+    <button class="btn btn-disconnect" id="btn-clear-data" style="padding:8px;font-size:12px;">Clear Stored Task Data</button>
+    <div style="font-size:10px;color:#888;margin-top:6px">Deletes workflows, recordings, schedules, run history, audit history, and target state. Does not delete downloads or bridge configuration.</div>
   </div>
 
   <div class="status-card" id="recorder-card" style="margin-top:12px;display:none">
@@ -190,7 +204,7 @@
   </div>
 
   <div class="footer">
-    Aegis Browser Connector v1.0.0<br>
+    Aegis Browser Connector v1.2.0<br>
     Localhost-only · deterministic local policy
   </div>
 

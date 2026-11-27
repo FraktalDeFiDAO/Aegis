@@ -108,6 +108,87 @@ func TestUnauthenticatedConnectionCannotReplaceController(t *testing.T) {
 	}
 }
 
+func TestInfoRequiresBearerToken(t *testing.T) {
+	srv := NewServer(ServerConfig{Token: "test-token", RuntimePath: filepath.Join(t.TempDir(), "runtime.json")})
+	addr, err := srv.StartNonBlocking(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = srv.Stop() })
+
+	for _, test := range []struct {
+		name  string
+		token string
+		want  int
+	}{
+		{name: "missing", want: http.StatusUnauthorized},
+		{name: "wrong", token: "wrong", want: http.StatusUnauthorized},
+		{name: "valid", token: "test-token", want: http.StatusOK},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodGet, "http://"+addr+"/info", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.token != "" {
+				req.Header.Set("Authorization", "Bearer "+test.token)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != test.want {
+				t.Fatalf("status=%d, want %d", resp.StatusCode, test.want)
+			}
+		})
+	}
+	resp, err := http.Get("http://" + addr + "/health")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("non-sensitive discovery health status=%d", resp.StatusCode)
+	}
+}
+
+func TestDiscoveryLockPreventsConcurrentCredentialOverwrite(t *testing.T) {
+	runtimePath := filepath.Join(t.TempDir(), "runtime.json")
+	first := NewServer(ServerConfig{Token: "first", RuntimePath: runtimePath})
+	if _, err := first.StartNonBlocking(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	second := NewServer(ServerConfig{Token: "second", RuntimePath: runtimePath})
+	if _, err := second.StartNonBlocking(context.Background()); err == nil {
+		_ = second.Stop()
+		t.Fatal("second bridge overwrote the active discovery credential")
+	}
+	if err := first.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := second.StartNonBlocking(context.Background()); err != nil {
+		t.Fatalf("bridge did not start after lock release: %v", err)
+	}
+	_ = second.Stop()
+}
+
+func TestStaleDiscoveryLockIsReclaimed(t *testing.T) {
+	runtimePath := filepath.Join(t.TempDir(), "runtime.json")
+	lockPath := runtimePath + ".lock"
+	if err := os.MkdirAll(lockPath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(lockPath, "pid"), []byte("99999999"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServer(ServerConfig{Token: "test", RuntimePath: runtimePath})
+	if _, err := srv.StartNonBlocking(context.Background()); err != nil {
+		t.Fatalf("stale lock was not reclaimed: %v", err)
+	}
+	_ = srv.Stop()
+}
+
 func TestGeneratedTokenRotatesAcrossBridgeRestart(t *testing.T) {
 	runtimePath := filepath.Join(t.TempDir(), "runtime.json")
 	start := func() (*Server, string, struct{ Addr, Token string }) {

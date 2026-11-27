@@ -2,6 +2,7 @@
 """Validate the Chrome candidate ZIP without extracting it or claiming store approval."""
 import hashlib
 import json
+import re
 from pathlib import Path, PurePosixPath
 import sys
 import zipfile
@@ -25,7 +26,11 @@ def verify(path):
             raise ValueError('Development key or external update URL in store package')
         if 'nativeMessaging' not in manifest.get('permissions', []):
             raise ValueError('Companion startup permission missing')
-        references = [manifest['background']['service_worker'], 'browser-control.js']
+        worker_name = manifest['background']['service_worker']
+        references = [worker_name]
+        worker = archive.read(worker_name).decode('utf-8')
+        for call in re.findall(r'importScripts\(([^)]*)\)', worker):
+            references.extend(re.findall(r"['\"]([^'\"]+\.js)['\"]", call))
         for content in manifest.get('content_scripts', []):
             references.extend(content.get('js', []))
         references.extend(manifest.get('icons', {}).values())

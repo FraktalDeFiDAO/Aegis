@@ -48,6 +48,11 @@ func TestCrawlEndpointMethod(t *testing.T) {
 
 func TestCrawlEndpointValidRequest(t *testing.T) {
 	s := NewServer()
+	done := make(chan struct{})
+	s.crawlRunner = func(crawler.Config, string) error {
+		close(done)
+		return nil
+	}
 
 	// Create a valid config payload
 	config := crawler.Config{
@@ -72,6 +77,11 @@ func TestCrawlEndpointValidRequest(t *testing.T) {
 	expected := `{"message":"Crawl started"}`
 	if !strings.Contains(rr.Body.String(), "Crawl started") {
 		t.Errorf("handler returned unexpected body: got %v want %v", rr.Body.String(), expected)
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("crawl runner did not finish")
 	}
 }
 

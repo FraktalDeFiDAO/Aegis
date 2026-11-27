@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('btn-disconnect').addEventListener('click', disconnect);
   const saveBtn = document.getElementById('btn-save-policy');
   if (saveBtn) saveBtn.addEventListener('click', savePolicy);
+  document.getElementById('btn-clear-data')?.addEventListener('click', clearStoredData);
   document.getElementById('btn-recorder-start')?.addEventListener('click', recorderStart);
   document.getElementById('btn-recorder-pause')?.addEventListener('click', recorderPause);
   document.getElementById('btn-recorder-stop')?.addEventListener('click', recorderStop);
@@ -24,6 +25,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.type === 'connected') { updateUI(true); refreshPolicy(); }
     if (msg.type === 'disconnected') updateUI(false);
+    if (msg.type === 'approvalRequested' || msg.type === 'approvalResolved') refreshApprovals();
   });
 
   // Check current state — background auto-connects on startup
@@ -41,6 +43,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       updateUI(null);
     }
     await refreshPolicy();
+    await refreshApprovals();
   } catch (e) {
     updateUI(null);
   }
@@ -129,6 +132,8 @@ async function refreshPolicy() {
     if (el) el.textContent = mode;
     const sel = document.getElementById('policy-select');
     if (sel) sel.value = mode;
+    const scopes = document.getElementById('trusted-scopes');
+    if (scopes && document.activeElement !== scopes) scopes.value = Array.isArray(p.trustedScopes) ? p.trustedScopes.join(', ') : '';
   } catch (_) {}
 }
 
@@ -146,13 +151,57 @@ async function savePolicy() {
   const mode = sel ? sel.value : 'manual-approve';
   try {
     const current = await chrome.runtime.sendMessage({ type: 'getPolicy' });
-    const policy = Object.assign({}, (current && current.policy) || {}, { mode });
+    const trustedScopes = (document.getElementById('trusted-scopes')?.value || '').split(/[\n,]/).map(value => value.trim()).filter(Boolean);
+    const policy = Object.assign({}, (current && current.policy) || {}, { mode, trustedScopes });
     await chrome.runtime.sendMessage({ type: 'setPolicy', policy });
     if (msg) { msg.textContent = 'Saved'; msg.style.color = '#00d4aa'; }
     await refreshPolicy();
   } catch (e) {
     if (msg) { msg.textContent = 'Save failed'; msg.style.color = '#e74c3c'; }
   }
+}
+
+async function refreshApprovals() {
+  const card = document.getElementById('approval-card');
+  const list = document.getElementById('approval-list');
+  if (!card || !list) return;
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'getApprovals' });
+    const approvals = (resp && resp.approvals) || [];
+    card.style.display = approvals.length ? 'block' : 'none';
+    list.replaceChildren();
+    for (const approval of approvals) {
+      const row = document.createElement('div');
+      row.style.cssText = 'margin:8px 0;padding:8px;border:1px solid #0f3460;border-radius:6px';
+      row.dataset.approvalId = approval.id;
+      const text = document.createElement('div');
+      text.style.cssText = 'font-size:11px;margin-bottom:6px';
+      text.textContent = `${approval.command} · tab ${approval.tabId || 'unknown'} · ${approval.reason}`;
+      const approve = document.createElement('button');
+      approve.className = 'btn btn-connect';
+      approve.style.cssText = 'padding:6px;font-size:11px;margin-right:6px';
+      approve.textContent = 'Approve once';
+      approve.addEventListener('click', () => resolveApproval(approval.id, true));
+      const deny = document.createElement('button');
+      deny.className = 'btn btn-disconnect';
+      deny.style.cssText = 'padding:6px;font-size:11px';
+      deny.textContent = 'Deny';
+      deny.addEventListener('click', () => resolveApproval(approval.id, false));
+      row.append(text, approve, deny);
+      list.append(row);
+    }
+  } catch (_) {}
+}
+
+async function resolveApproval(id, approved) {
+  await chrome.runtime.sendMessage({ type: 'resolveApproval', id, approved });
+  await refreshApprovals();
+}
+
+async function clearStoredData() {
+  if (!window.confirm('Delete stored workflows, recordings, schedules, run history, audit history, and target state?')) return;
+  await chrome.runtime.sendMessage({ type: 'clearLocalData' });
+  await refreshPolicy();
 }
 
 // ─── Recorder UI ─────────────────────────────────────────────────────────────

@@ -21,9 +21,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
-      - run: go build ./cmd/aegis ./cmd/aegis-native-host
+      - run: go build ./...
       - run: go test ./...
+      - run: go test -race ./...
       - run: go vet ./...
+      - run: node --check extension/background.js
+      - run: node --check extension/content.js
+      - run: node --check extension/popup.js
       - run: node --test extension/tests/*.test.cjs
       - run: python3 scripts/test-install-native-host.py
       - run: python3 scripts/test-install-browser-skill.py
@@ -31,6 +35,10 @@ jobs:
       - run: python3 skills/google-play-developer/scripts/test_plan_release.py
       - run: bash scripts/package-extension.sh
       - run: python3 scripts/verify-extension-package.py dist/extension/aegis-connector-chrome.zip
+      - name: Install Chromium for isolated connector integration
+        run: sudo apt-get update && sudo apt-get install -y chromium
+      - run: go build -o aegis ./cmd/aegis
+      - run: node scripts/test-browser-connector.cjs ./aegis
       - uses: actions/upload-artifact@v4
         with:
           name: browser-connector-candidate

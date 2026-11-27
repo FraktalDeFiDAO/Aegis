@@ -219,7 +219,6 @@ func TestCommandConstants(t *testing.T) {
 		CmdType, CmdFill, CmdClear, CmdPress, CmdSelect,
 		CmdScroll, CmdScrollIntoView,
 		CmdWaitForSelector, CmdWaitForNav, CmdWaitForLoad,
-		CmdEvaluate, CmdEvaluateAll,
 		CmdScreenshot, CmdScreenshotElem, CmdCaptureVisible,
 		CmdGetCookies, CmdSetCookie, CmdDeleteCookie, CmdClearCookies,
 		CmdGetLocalStorage, CmdSetLocalStorage,

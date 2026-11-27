@@ -212,11 +212,11 @@ func getBrowserOrConnector(headless bool) (*rod.Browser, *connector.Connector, f
 	}
 
 	if bridgeURL != "" {
-		c, err = connector.Connect(bridgeURL, connector.WithToken(discoveredBridgeToken(bridgeURL)))
+		c, err = connector.Connect(bridgeURL, connector.WithToken(discoveredBridgeToken(bridgeURL)), connector.WithReconnectDiscovery(discoveredBridge))
 	} else {
 		// Reuse a native-host/manual bridge before starting another listener.
 		url, token := discoveredBridge()
-		c, err = connector.Connect(url, connector.WithToken(token))
+		c, err = connector.Connect(url, connector.WithToken(token), connector.WithReconnectDiscovery(discoveredBridge))
 		if err != nil {
 			// Auto-start bridge server and wait for extension
 			var addr string
@@ -390,6 +390,7 @@ func crawlCmd() *cobra.Command {
 				if bridgeURL != "" {
 					config.BridgeURL = bridgeURL
 					config.BridgeToken = discoveredBridgeToken(bridgeURL)
+					config.BridgeDiscovery = discoveredBridge
 				}
 				config.ConnectorMode = true
 			}

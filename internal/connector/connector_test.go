@@ -3,8 +3,11 @@ package connector
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"path/filepath"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/coppertone/bug-hunter/app/aegis/internal/connector/bridge"
 )
@@ -30,6 +33,93 @@ func TestConnectRejectsFailedAuthentication(t *testing.T) {
 	if err := authenticated.Close(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestReconnectRefreshesRotatedDiscoveryCredential(t *testing.T) {
+	runtimePath := filepath.Join(t.TempDir(), "runtime.json")
+	first := bridge.NewServer(bridge.ServerConfig{Token: "first-token", RuntimePath: runtimePath})
+	addr, err := first.StartNonBlocking(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	portNumber, err := strconv.Atoi(port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := "ws://" + addr + "/ws?client=aegis"
+	currentToken := "second-token"
+	conn, err := Connect(url, WithToken("first-token"), WithReconnectDiscovery(func() (string, string) {
+		return url, currentToken
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := first.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	second := bridge.NewServer(bridge.ServerConfig{Addr: "127.0.0.1", Port: portNumber, Token: currentToken, RuntimePath: runtimePath})
+	if _, err := second.StartNonBlocking(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer second.Stop()
+
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		result, err := conn.Send("listTabs", nil, 0)
+		if err == nil && result != nil && result.Err != nil && result.Err.Code == bridge.ErrCodeNotConnected {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatal("connector did not reconnect with the rotated discovery credential")
+}
+
+func TestReconnectWithoutDiscoveryCredentialKeepsBridge(t *testing.T) {
+	runtimePath := filepath.Join(t.TempDir(), "runtime.json")
+	first := bridge.NewServer(bridge.ServerConfig{Token: "custom-token", RuntimePath: runtimePath})
+	addr, err := first.StartNonBlocking(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	portNumber, err := strconv.Atoi(port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := "ws://" + addr + "/ws?client=aegis"
+	conn, err := Connect(url, WithToken("custom-token"), WithReconnectDiscovery(func() (string, string) {
+		return "ws://127.0.0.1:9876/ws?client=aegis", ""
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := first.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	second := bridge.NewServer(bridge.ServerConfig{Addr: "127.0.0.1", Port: portNumber, Token: "custom-token", RuntimePath: runtimePath})
+	if _, err := second.StartNonBlocking(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer second.Stop()
+
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		result, err := conn.Send("listTabs", nil, 0)
+		if err == nil && result != nil && result.Err != nil && result.Err.Code == bridge.ErrCodeNotConnected {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatal("connector abandoned its custom bridge when discovery had no credential")
 }
 
 func TestNewPage(t *testing.T) {

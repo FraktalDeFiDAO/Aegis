@@ -107,6 +107,13 @@ Not the audience:
   replace an authenticated session.
 - Tokens are generated per bridge start, delivered through registered native
   messaging or an owner-only discovery file, and rotated on restart.
+- Sensitive commands use one-time popup approval or exact trusted scopes.
+  Controllers cannot self-approve, change policy, or execute arbitrary
+  JavaScript. Direct, workflow, scheduled, and capture paths share this module.
+- Cookie/storage values require explicit inclusion, retained task data is
+  bounded/redacted and locally deletable, and `/info` requires authentication.
+- Linux/macOS/Windows registration and checksummed release packaging are
+  implemented; clean native and store installation remain release gates.
 
 ### 4.6 Intelligence (limited)
 - Single URLHaus feed ingestion; threat-cache lookup for scanned URLs.

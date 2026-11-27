@@ -71,22 +71,40 @@ func connectInfoCmd() *cobra.Command {
 		Short: "Show bridge /info diagnostics (localhost, no connector session required)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			statePath := defaultRuntimeStatePath()
+			token := ""
 			if b, err := os.ReadFile(statePath); err == nil {
 				var st runtimeState
-				if json.Unmarshal(b, &st) == nil && bridge == "" && st.Addr != "" {
-					bridge = "http://" + st.Addr
+				if json.Unmarshal(b, &st) == nil && st.Addr != "" {
+					discovered := "http://" + st.Addr
+					if bridge == "" {
+						bridge = discovered
+						token = st.Token
+					} else if bridge == discovered {
+						token = st.Token
+					}
 				}
 			}
 			if bridge == "" {
 				bridge = "http://127.0.0.1:9876"
 			}
+			if token == "" {
+				return fmt.Errorf("no matching private discovery credential for %s", bridge)
+			}
+			req, err := http.NewRequestWithContext(cmd.Context(), http.MethodGet, bridge+"/info", nil)
+			if err != nil {
+				return err
+			}
+			req.Header.Set("Authorization", "Bearer "+token)
 			client := &http.Client{Timeout: 2 * time.Second}
-			resp, err := client.Get(bridge + "/info")
+			resp, err := client.Do(req)
 			if err != nil {
 				fmt.Printf("info: unreachable (%v)\n", err)
 				return nil
 			}
 			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("info: bridge returned %s", resp.Status)
+			}
 			var info map[string]interface{}
 			if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 				return fmt.Errorf("decode info: %w", err)
@@ -101,32 +119,19 @@ func connectInfoCmd() *cobra.Command {
 }
 
 func connectPolicyCmd() *cobra.Command {
-	cmd := &cobra.Command{Use: "policy", Short: "Get/set local connector policy (best-effort, via extension/bridge)"}
+	cmd := &cobra.Command{Use: "policy", Short: "Read local connector policy (changes require the extension popup)"}
 	var mode string
 	var out string
-	cmd.Flags().StringVar(&mode, "mode", "", "Set policy mode: manual-approve, auto-with-prompts, unattended")
+	cmd.Flags().StringVar(&mode, "mode", "", "Deprecated: remote policy changes are disabled; use the extension popup")
 	cmd.Flags().StringVar(&out, "output", "", "Write JSON output to file")
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		if mode != "" {
+			return fmt.Errorf("remote policy changes are disabled; use the extension popup")
+		}
 		if !connectorMode {
-			fmt.Println("status: requires --connector to query/update live extension policy")
-			if mode != "" {
-				fmt.Printf("requested_mode: %s\n", mode)
-			}
-			return nil
+			return fmt.Errorf("--connector is required")
 		}
 		return withConnector(func(conn *connector.Connector) error {
-			if mode != "" {
-				res, err := conn.Send("policy.set", map[string]interface{}{"policy": map[string]interface{}{"mode": mode}}, 0)
-				if err != nil {
-					return err
-				}
-				if !res.Success {
-					if res.Err != nil {
-						return fmt.Errorf("%s: %s", res.Err.Code, res.Err.Message)
-					}
-					return fmt.Errorf("%s", res.Error)
-				}
-			}
 			res, err := conn.Send("policy.get", nil, 0)
 			if err != nil {
 				return err

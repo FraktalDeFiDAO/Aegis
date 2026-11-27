@@ -12,7 +12,7 @@
 | Area | Chrome/Brave/Chromium (MV3) | Firefox (MV2 best-effort) |
 |---|---|---|
 | Connect/reconnect | Verify popup connect/disconnect, auto-reconnect/backoff, status updates | Same; note any MV2 differences |
-| Core commands | navigate, tabs, click/type/fill, waits, evaluate (policy-gated), cookies/storage, screenshot | Same; capability-gate where unsupported |
+| Core commands | navigate, tabs, click/type/fill, waits, dedicated page/element reads and guarded edits, cookies/storage, screenshot | Same; capability-gate where unsupported |
 | Observability | debugger attach/detach (user-visible indicator), console/network/page-state capture, redaction/bounds | Fallback/limited; document unsupported fields |
 | Multi-tab/groups | native `tabGroups`, deterministic target set, frame targeting | Logical tab-set fallback (no native groups) |
 | Record/replay | record start/stop/pause, workflow store/export/import (if UI/CLI), replay trace, redaction | Same best-effort |
@@ -24,7 +24,7 @@
 1. **Connect:** Start bridge (`aegis` connector mode or standalone flow), open popup, confirm “Connected”. Kill/restart bridge and confirm reconnect/backoff without lost command correlation for new commands.
 2. **Core navigation/tabs:** `listTabs`, `newTab`, `switchTab`, `navigate`, `getTitle/getCurrentUrl`, `closeTab` on non-internal pages.
 3. **DOM/actions:** `querySelector(All)`, `click`, `type/fill/clear/select`, waits (`waitForSelector/load/idle/timeout/navigation`), `extractData`.
-4. **Eval (gated):** `evaluate` only on trusted/allowed scope per local policy; confirm denial/prompt behavior in manual/auto-with-prompts modes.
+4. **Approvals and evaluation removal:** `evaluate`/`evaluateAll`, remote `policy.set`, and remote `approval.respond` must be rejected. In manual mode, deny one command and approve another once through the real popup. Verify unattended mode only allows exact trusted origin/path scopes.
 5. **Cookies/storage (gated/redacted):** get/set/delete/clear cookies and local/session storage on authorized target; verify no secret leakage in logs.
 6. **Screenshots/visuals:** `captureVisibleTab`, element screenshot/full-page flow if available; confirm context metadata and bounds.
 7. **Observability:** attach debugger on allowed tab, generate console/network/errors, fetch/get streams/buffers and page snapshot; verify redaction, caps, and detach indicator.

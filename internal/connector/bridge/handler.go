@@ -258,11 +258,6 @@ func TypeCommand(selector string, value string, tabID int) *Command {
 	}, tabID)
 }
 
-// EvaluateCommand creates an evaluate command.
-func EvaluateCommand(script string, tabID int) *Command {
-	return MustBuildCommand(CmdEvaluate, map[string]string{"script": script}, tabID)
-}
-
 // ScreenshotCommand creates a screenshot command.
 func ScreenshotCommand(fullPage bool, tabID int) *Command {
 	return MustBuildCommand(CmdScreenshot, map[string]bool{"fullPage": fullPage}, tabID)

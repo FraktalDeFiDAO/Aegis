@@ -18,7 +18,7 @@ function harness({failure = false, synchronousFailure = false} = {}) {
     connectNative: name => { assert.equal(name,'com.aegis.bridge'); launches++; if(synchronousFailure) throw new Error('not installed'); return port; },
     lastError: failure ? {message:'not installed'} : undefined,
   };
-  const context = vm.createContext({chrome:{runtime}, setTimeout,clearTimeout,log:()=>{},scheduleReconnect:()=>{},notifyPopup:()=>{},flushEventQueue:()=>{},detectCapabilities:()=>({}),
+  const context = vm.createContext({chrome:{runtime}, setTimeout,clearTimeout,log:()=>{},scheduleReconnect:()=>{},notifyPopup:()=>{},flushEventQueue:()=>{},detectCapabilities:()=>({}),localApproval:{cancelAll:()=>{}},
     WebSocket: class {
       static OPEN=1; static CONNECTING=0;
       constructor(url){this.url=url;this.readyState=0;sockets.push(this);}

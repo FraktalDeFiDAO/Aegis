@@ -1,5 +1,8 @@
 # Candidate verification — 2026-11-26
 
+Historical 1.1.2 record. Current 1.2.0 verification is in
+`docs/chrome-web-store/verification-2026-11-27.md`.
+
 Candidate: 1.1.2. Linux local verification:
 
 - `go test ./...`: passed after correcting an existing vet diagnostic in a WAF

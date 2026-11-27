@@ -101,12 +101,12 @@ func (e *Element) GetAttribute(name string) (string, error) {
 	return *data.Value, nil
 }
 
-// SetAttribute sets an attribute value (via JS).
+// SetAttribute sets an attribute through the guarded extension command.
 func (e *Element) SetAttribute(name, value string) error {
-	script := fmt.Sprintf(`() => { document.querySelector('%s').setAttribute('%s', '%s'); }`,
-		e.selector, name, value)
-	result, err := e.page.connector.sendCommand(bridge.CmdEvaluate, map[string]string{
-		"script": script,
+	result, err := e.page.connector.sendCommand(bridge.CmdElementSetAttr, map[string]string{
+		"selector": e.selector,
+		"name":     name,
+		"value":    value,
 	}, e.page.tabID)
 	if err != nil {
 		return err
@@ -117,11 +117,11 @@ func (e *Element) SetAttribute(name, value string) error {
 	return nil
 }
 
-// Property returns a JavaScript property value.
+// Property returns an allowlisted JavaScript property value.
 func (e *Element) Property(name string) interface{} {
-	script := fmt.Sprintf(`() => document.querySelector('%s')['%s']`, e.selector, name)
-	result, err := e.page.connector.sendCommand(bridge.CmdEvaluate, map[string]string{
-		"script": script,
+	result, err := e.page.connector.sendCommand(bridge.CmdElementProperty, map[string]string{
+		"selector": e.selector,
+		"name":     name,
 	}, e.page.tabID)
 	if err != nil {
 		return nil
@@ -232,8 +232,8 @@ type Box struct {
 
 // BoundingBox returns the element's bounding box.
 func (e *Element) BoundingBox() (*Box, error) {
-	result, err := e.page.connector.sendCommand(bridge.CmdEvaluate, map[string]string{
-		"script": fmt.Sprintf(`() => { const el = document.querySelector('%s'); if (!el) return null; const r = el.getBoundingClientRect(); return {x:r.x,y:r.y,width:r.width,height:r.height}; }`, e.selector),
+	result, err := e.page.connector.sendCommand(bridge.CmdGetElementBox, map[string]string{
+		"selector": e.selector,
 	}, e.page.tabID)
 	if err != nil {
 		return nil, err
@@ -241,23 +241,20 @@ func (e *Element) BoundingBox() (*Box, error) {
 	if !result.Success {
 		return nil, fmt.Errorf("bounding box: %s", result.Error)
 	}
-	var data struct {
-		Result *Box `json:"result"`
-	}
+	var data *Box
 	if err := decodeResult(result, &data); err != nil {
 		return nil, err
 	}
-	if data.Result == nil {
+	if data == nil {
 		return nil, fmt.Errorf("element not found: %s", e.selector)
 	}
-	return data.Result, nil
+	return data, nil
 }
 
-// Remove removes the element from the DOM (via JS).
+// Remove removes the element from the DOM.
 func (e *Element) Remove() error {
-	script := fmt.Sprintf(`() => document.querySelector('%s').remove()`, e.selector)
-	result, err := e.page.connector.sendCommand(bridge.CmdEvaluate, map[string]string{
-		"script": script,
+	result, err := e.page.connector.sendCommand(bridge.CmdElementRemove, map[string]string{
+		"selector": e.selector,
 	}, e.page.tabID)
 	if err != nil {
 		return err

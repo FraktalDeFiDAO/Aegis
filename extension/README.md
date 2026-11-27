@@ -52,7 +52,7 @@ After installation, reload Aegis in the extension manager to apply the
 is occupied, the native host reports the selected fallback port automatically.
 An existing Aegis bridge is reused; a bridge launched by the extension stops when
 its native messaging port closes. Firefox and installations without the native
-host can continue using a manually started bridge. The installer currently supports Linux only.
+host can continue using a manually started bridge. Per-user registration supports Linux and macOS manifests and Windows HKCU registration; clean native verification is still required on each OS.
 The native host returns a per-start authentication token through the registered
 native-messaging port. No token entry is required for this automatic flow.
 
@@ -83,8 +83,8 @@ aegis exploit --connector --type session-hijack --target https://target.example
 aegis connect status
 aegis connect info
 
-# Policy/audit (connector required)
-aegis connect --connector policy --mode manual-approve
+# Read local policy (changes require the extension popup)
+aegis connect --connector policy
 aegis connect --connector audit --limit 100
 aegis connect --connector audit-report --type policy --outcome denied --limit 200
 aegis connect --connector send --command listTabs
@@ -114,7 +114,15 @@ For manual setup, `aegis connect serve` prints the runtime-state path. Copy the
 into the popup's **Manual Bridge Token** field, then connect. Do not paste the
 token into URLs, shell arguments, issues, or logs. The CLI reads the same file
 automatically when its bridge URL matches. Restarting the bridge rotates the
-token; update the manual field after each restart.
+token; update the manual field after each restart. Controllers configured from
+runtime discovery refresh URL and token automatically during reconnect. Only one
+live bridge may own a discovery path; a second process fails instead of
+overwriting credentials, and stale process locks are recovered conservatively.
+
+Build a platform package with CLI, native host, extension ZIPs, installation
+notes, and checksums using `python3 scripts/build-release.py`. The manual
+`release-candidate` workflow runs this packaging on Linux, macOS, and Windows
+without publishing a release.
 
 If the bridge server is not already running, Aegis starts it automatically.
 The extension connects to `ws://127.0.0.1:<port>/ws` (localhost only).
@@ -198,22 +206,46 @@ shadow roots remain outside this layer.
 Validation: `node scripts/test-browser-connector.cjs ./aegis` launches a separate
 headless Chromium profile against local fixtures and an isolated authenticated bridge.
 It verifies wrong-token rejection, extension/controller authentication,
+controller self-grant/evaluation rejection, real popup approval and denial,
 file/server hashes, downloads, cross-origin frames, trusted input/native JS
-dialogs/HTML5 dragging, full-page PNG dimensions and preserved policy denials.
+dialogs/HTML5 dragging, full-page PNG dimensions and workflow policy denials.
 The user's browser profile and real accounts are not used.
 
-- **Core:** navigation/tabs/elements/interactions/waits/eval/cookies/storage/screenshot, session capture.
+- **Core:** navigation/tabs/elements/interactions/waits/dedicated page reads/cookies/storage/screenshot, session capture. Arbitrary controller evaluation is unavailable.
 - **Observability (Phase 1):** debugger attach hooks and buffered console/network/page-state snapshot commands (`debug.*`, `page.snapshot`) with bounded/redacted payloads where supported; graceful degradation when unavailable.
 - **Multi-tab/targeting (Phase 2):** native tab groups on supported Chromium; logical target-set fallback on Firefox/unsupported browsers; persisted active target set (best-effort).
 - **Workflows/scheduling (Phase 3–4):** local recording/workflow/schedule storage and replay handlers, step capture during recording, run history hooks, CLI list/run/export/import/delete; alarms/notifications where permitted; missed/interrupted handling best-effort under MV3 constraints.
 - **Downloads/uploads/visuals (Phase 5):** download list/wait (permission-gated), file-input upload helper for provided data payloads (browser security limits apply), screenshot/evidence capture helpers.
 - **Local policy/approvals (Phase 6):** deterministic local modes `manual-approve`, `auto-with-prompts`, `unattended` (trusted scope), allow/deny hooks, gated sensitive actions, popup policy controls, bounded local audit log (`audit.list`). **No prompt-injection/model safety classifier parity.**
 
+## Approvals, trusted scopes, and retained data
+
+`manual-approve` and `auto-with-prompts` create one-time popup approvals for
+sensitive work. Approval waits up to 20 seconds and cancels on disconnect; the
+controller cannot resolve it. `unattended` is not a wildcard bypass: every
+sensitive command must match a trusted HTTP(S) origin, optionally restricted to
+a path such as `https://example.com/app`. `*` and lookalike origins do not match.
+Policy changes and approval decisions are accepted only from extension UI pages.
+Workflow, scheduled, and capture steps use the same approval module.
+
+Cookie and local/session-storage values are omitted or replaced unless the
+caller explicitly sets `includeValues:true`. Workflows, recordings, runs, and
+audit entries are bounded and redacted for common secret patterns. The popup's
+Clear Stored Task Data action deletes workflows, recordings, schedules, run and
+audit history, target state, and schedule alarms. It does not delete downloads,
+bridge configuration, controller output, or downstream service data. Redaction
+is not guaranteed to find every secret; review captures before sharing them.
+
 ## Security
 
 - Bridge server binds to **127.0.0.1 only** — no network exposure
 - Controller and extension must authenticate before registration or commands; failed authentication cannot replace a session
 - Per-start 256-bit tokens are delivered through native messaging or an owner-only (`0600`) discovery file, never in WebSocket URLs
+- A PID-backed discovery lock prevents concurrent credential overwrites; reconnect refreshes rotated URL/token state
+- `/info` requires bearer authentication; `/health` exposes only non-sensitive discovery metadata
+- Arbitrary controller JavaScript and remote policy/approval changes are disabled
+- Sensitive commands require exact trusted scopes or one-time popup approval; pending work cancels on disconnect
+- Cookie/storage values require explicit inclusion, records are bounded/redacted, and task data can be cleared in the popup
 - No secrets/PII logging by default; sensitive captures redacted/bounded where implemented
 - Sensitive actions can be gated by local policy mode; hard blocks for internal/unsupported pages
 - Commands are accepted only from authenticated localhost WebSocket connections
@@ -245,7 +277,7 @@ The user's browser profile and real accounts are not used.
 ### Capability/policy denied
 
 - Command may be unsupported in this browser/manifest mode or blocked by local policy
-- Adjust policy mode/trusted scope via extension popup/controls or `aegis connect --connector policy`
+- Adjust policy mode/trusted scopes or resolve pending approvals in the extension popup; `aegis connect --connector policy` is read-only
 
 ## Supported Commands (core + additive)
 
@@ -256,7 +288,7 @@ The user's browser profile and real accounts are not used.
 | Element | querySelector, querySelectorAll, getElementText, getElementAttribute, getElementHtml |
 | Interaction | click, doubleClick, rightClick, hover, type, fill, clear, press, select, check, scroll |
 | Wait | waitForSelector, waitForNavigation, waitForLoad, waitForIdle, waitForTimeout |
-| JavaScript | evaluate, evaluateAll |
+| Dedicated page/element reads and guarded edits | page.html, page.text, element.visible/property/setAttribute/remove, getElementBoundingBox |
 | Screenshot | screenshot, screenshotElement, captureVisibleTab |
 | Cookies/Storage | getCookies, setCookie, deleteCookie, clearCookies, local/session storage ops |
 | Frames/Extract | switchFrame, switchMain, listFrames, extractData |
@@ -264,7 +296,7 @@ The user's browser profile and real accounts are not used.
 | Groups/Targeting | createTabGroup, addTabToGroup, removeTabFromGroup, listTabGroups, focusTabGroup, target.get/set |
 | Workflows/Scheduling | record.start/stop/pause, workflow.list/get/save/delete/run, schedule.create/list/delete/runs |
 | Files | download.list/wait, upload.file |
-| Policy/Audit | policy.get/set, approval.respond, audit.list |
+| Policy/Audit | policy.get (read-only), audit.list/report; popup-only policy changes and approvals |
 
 ## Browser Compatibility
 

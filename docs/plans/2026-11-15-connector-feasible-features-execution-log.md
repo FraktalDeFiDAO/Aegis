@@ -286,3 +286,38 @@ Status: **in progress (continuation)**
 - This closes the authentication item in `docs/chrome-web-store/README.md`, not
   the approval-enforcement, remote-code, disclosure, publisher, screenshot,
   release-installer, clean-store, or platform verification blockers.
+
+## 17. Store safety and release hardening (2026-11-27)
+
+### Implemented
+- Replaced approval placeholders with a 20-second local queue resolved only by
+  extension UI. Direct, workflow, scheduled, capture, and sensitive DOM-read
+  paths use the same authorization module; disconnect and deletion cancel work.
+- Removed controller `evaluate`/`evaluateAll`, remote policy changes, and remote
+  approval resolution. Added dedicated page/element commands and exact HTTP(S)
+  trusted origin/path matching for unattended work.
+- Cookie/storage values require explicit inclusion. Workflows, schedules, run
+  history, audit history, and debugger records use bounded/redacted storage;
+  the popup provides task-data deletion. `/info` requires bearer auth.
+- Added discovery locking, reconnect credential refresh, custom-bridge fallback
+  preservation, and native rediscovery of fallback-port bridges.
+- Added Linux/macOS/Windows registration support, checksummed release packaging
+  with the installer included, a non-publishing release matrix, portable ZIP
+  fallback, a sanitized real-popup screenshot, and finalized draft disclosures.
+- Isolated the asynchronous API crawl test and serialized dump pruning after
+  full-suite verification exposed environment leakage and a retention flake.
+
+### Validation
+- Full Go vet/build/test/race suites: **PASS**. API stress: 10 normal and 3 race
+  runs **PASS**. Node: **23 passed**. Python installer/helper/release tests:
+  **PASS**. CI/release YAML parsing: **PASS**.
+- Final isolated Chromium suite, including real approval/denial and DOM-read
+  approval: **PASS**. Screenshot regenerated at 1280x800.
+- Chrome package verification and all Linux release checksums: **PASS**.
+  Packaged installer dry-run: **PASS**. Exact hashes and residual external gates
+  are recorded in `docs/chrome-web-store/verification-2026-11-27.md`.
+
+### Remaining
+- Publisher identity/account/legal declarations, clean store-ID installation,
+  live macOS/Windows/Firefox checks, remote CI/release matrix, PR review/merge,
+  and branch protection remain external release steps.

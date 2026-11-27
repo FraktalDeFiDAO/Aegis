@@ -134,6 +134,35 @@ func TestReusedBridgeSurvivesEOF(t *testing.T) {
 	}
 }
 
+func TestReusedBridgeDiscoversFallbackPort(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	srv := bridge.NewServer(bridge.ServerConfig{Port: 9876})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	addr, err := srv.StartNonBlocking(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Stop()
+	_, actualPortText, _ := net.SplitHostPort(addr)
+	actualPort, _ := strconv.Atoi(actualPortText)
+	unused, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestedPort := unused.Addr().(*net.TCPAddr).Port
+	_ = unused.Close()
+	res, stop := runHost(t, Request{Type: "start", Port: requestedPort})
+	if !res.Reused || res.Port != actualPort || res.Port == requestedPort {
+		t.Fatalf("did not rediscover fallback-port bridge: %+v", res)
+	}
+	assertBridgeCredential(t, res)
+	stop()
+	if !existingBridge(ctx, addr) {
+		t.Fatal("native host stopped a rediscovered bridge it did not own")
+	}
+}
+
 func TestInvalidRequestDoesNotStartBridge(t *testing.T) {
 	for _, req := range []Request{{Type: "exec", Port: 9876}, {Type: "start", Port: -1}, {Type: "start", Port: 65536}} {
 		res, stop := runHost(t, req)

@@ -202,6 +202,7 @@ const (
 	CmdGetElementText   = "getElementText"
 	CmdGetElementAttr   = "getElementAttribute"
 	CmdGetElementHTML   = "getElementHtml"
+	CmdGetElementBox    = "getElementBoundingBox"
 	CmdClick            = "click"
 	CmdDoubleClick      = "doubleClick"
 	CmdRightClick       = "rightClick"
@@ -217,8 +218,12 @@ const (
 	CmdWaitForNav       = "waitForNavigation"
 	CmdWaitForLoad      = "waitForLoad"
 	CmdWaitForIdle      = "waitForIdle"
-	CmdEvaluate         = "evaluate"
-	CmdEvaluateAll      = "evaluateAll"
+	CmdPageHTML         = "page.html"
+	CmdPageText         = "page.text"
+	CmdElementVisible   = "element.visible"
+	CmdElementProperty  = "element.property"
+	CmdElementSetAttr   = "element.setAttribute"
+	CmdElementRemove    = "element.remove"
 	CmdScreenshot       = "screenshot"
 	CmdScreenshotElem   = "screenshotElement"
 	CmdCaptureVisible   = "captureVisibleTab"
@@ -281,10 +286,8 @@ const (
 	CmdScreenshotFullPage = "screenshot.fullPage"
 
 	// Phase 6 policy
-	CmdPolicyGet       = "policy.get"
-	CmdPolicySet       = "policy.set"
-	CmdApprovalRespond = "approval.respond"
-	CmdAuditList       = "audit.list"
+	CmdPolicyGet = "policy.get"
+	CmdAuditList = "audit.list"
 )
 
 // Event names emitted by the extension.

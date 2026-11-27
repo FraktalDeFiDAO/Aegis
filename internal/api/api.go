@@ -25,6 +25,7 @@ type Server struct {
 	logger               *logger.Logger
 	token                string
 	allowUnauthenticated bool
+	crawlRunner          func(crawler.Config, string) error
 
 	// Rate limiting
 	rateMu       sync.Mutex
@@ -128,8 +129,13 @@ func (s *Server) handleCrawl(w http.ResponseWriter, r *http.Request) {
 			cfg.DownloadPath = filepath.Join(dumpPath, "downloads")
 		}
 
-		c := crawler.NewCrawler(cfg, "")
-		if err := c.Run(dumpPath); err != nil {
+		runner := s.crawlRunner
+		if runner == nil {
+			runner = func(config crawler.Config, path string) error {
+				return crawler.NewCrawler(config, "").Run(path)
+			}
+		}
+		if err := runner(cfg, dumpPath); err != nil {
 			s.logger.Error("API Crawl failed", "error", err)
 		}
 	}()
@@ -301,9 +307,13 @@ const (
 	defaultMaxDumpDirs = 16
 )
 
+var crawlDumpMu sync.Mutex
+
 // parseIntEnv (defined earlier) provides safe integer env parsing.
 
 func prepareCrawlDumpDir() (string, error) {
+	crawlDumpMu.Lock()
+	defer crawlDumpMu.Unlock()
 	maxDirs := parseIntEnv("AEGIS_API_DUMP_MAX_DIRS", defaultMaxDumpDirs)
 	root := os.Getenv("AEGIS_API_DUMP_ROOT")
 	if root == "" {

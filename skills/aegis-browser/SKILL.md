@@ -78,10 +78,11 @@ Known implementation behavior:
   `listTabs`/`newTab` can be rejected on versions before 1.1.2 when the selected/persisted target is internal.
   Ask the user to return to a supported website and verify the target.
 - `manual-approve` and `auto-with-prompts` can deny navigation, clicks, fills,
-  snapshots, and other commands. `approval.respond` is a placeholder: its `ok`
-  does not grant approval or replay the request.
-- `unattended` currently permits broadly; `trustedScopes` is not a dependable
-  site boundary. Preserve policy and enforce the user's site/task scope yourself.
+  snapshots, and other commands. `approval.respond` and remote `policy.set` are
+  intentionally unavailable: only extension UI can resolve local approvals or
+  change policy. Denials, `approval_required`, timeouts, and cancellations are real.
+- `unattended` requires an exact trusted HTTP(S) origin/path scope; wildcards are
+  invalid. Preserve the user's configured policy and scope.
   Never enable unattended mode merely to make a command succeed.
 - Browser control does not authorize `scan`, `exploit`, session export, cookie
   collection, or debugger attachment. Prefer the narrowest page command needed.

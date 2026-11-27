@@ -135,7 +135,12 @@ gates), **[PARTIAL]** (implemented with documented gaps), **[STUB]**
   credential is generated per bridge start, delivered through native messaging
   or an owner-only (`0600`) discovery file, and compared in constant time.
   Failed authentication cannot replace a registered session; native startup
-  aborts if secure token generation fails.
+  aborts if secure token generation fails. Discovery is protected by a
+  live-process lock and reconnect refresh. Sensitive commands require exact
+  trusted scopes or one-time popup approval; remote policy changes, approval
+  resolution, and arbitrary JavaScript are disabled. Basic operations use fixed
+  dedicated commands, `/info` requires bearer auth, and retained task data has
+  bounded/redacted storage plus a popup deletion action.
 - **[DONE, LIB: yaml.v3] Workflow YAML engine** (`workflow`) — stdlib YAML
   + custom step executor
 - **[STUB] `benchCmd`** — replaced with explicit error pointing to

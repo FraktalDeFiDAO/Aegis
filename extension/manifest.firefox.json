@@ -2,9 +2,8 @@
   "manifest_version": 2,
   "name": "Aegis Browser Connector",
   "description": "Bridges Aegis security scanner to your live browser session",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "permissions": [
-    "activeTab",
     "tabs",
     "webNavigation",
     "cookies",
@@ -17,6 +16,7 @@
   "background": {
     "scripts": [
       "browser-control.js",
+      "local-approval.js",
       "background.js"
     ],
     "persistent": false
