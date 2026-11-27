@@ -202,3 +202,5 @@ Each release increases v1 finding closure rate by 5-10%.
 | 2026-06-02 | v3 | 4 new findings fixed. No v2 regressions. 203 tests. |
 | 2026-06-02 | v3.5 | SPEC + PRD + plan rewritten. Adds build-vs-buy rule, per-detector contract, capability statement, and explicit backlog. |
 | 2026-11-26 | connector | Browser bridge now requires authenticated hello for controller and extension, with private discovery credentials and rotation. |
+
+| 2026-11-27 | conformance | Reconciled plans with implementation; bounded/typed service workers, removed Redis shell probing, validated RESP/TLS URLs, corrected full-page screenshots, and made unsupported/nested workflow outcomes truthful. Full conformance remains blocked by the documented matrix. |

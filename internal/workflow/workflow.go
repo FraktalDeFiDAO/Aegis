@@ -178,6 +178,7 @@ type WorkflowResult struct {
 
 // Runner executes workflows
 type Runner struct {
+	runMu    sync.Mutex
 	workflow *Workflow
 	ctx      context.Context
 	results  []StepResult
@@ -258,6 +259,9 @@ func LoadWorkflow(path string) (*Workflow, error) {
 
 // Run executes the workflow
 func (r *Runner) Run(ctx context.Context) (*WorkflowResult, error) {
+	r.runMu.Lock()
+	defer r.runMu.Unlock()
+	r.results = nil
 	r.ctx = ctx
 	startTime := time.Now()
 
@@ -287,6 +291,7 @@ func (r *Runner) Run(ctx context.Context) (*WorkflowResult, error) {
 		result.Steps = append(result.Steps, stepResult)
 
 		if stepResult.Status == "failure" {
+			result.Status = "partial"
 			continueOn := strings.ToLower(step.ContinueOn)
 			if continueOn != "failure" && continueOn != "always" {
 				result.Status = "failure"
@@ -301,7 +306,7 @@ func (r *Runner) Run(ctx context.Context) (*WorkflowResult, error) {
 	// Execute on_success or on_failure actions
 	if result.Status == "success" && len(r.workflow.OnSuccess) > 0 {
 		r.executeActions(r.workflow.OnSuccess)
-	} else if result.Status == "failure" && len(r.workflow.OnFailure) > 0 {
+	} else if (result.Status == "failure" || result.Status == "partial") && len(r.workflow.OnFailure) > 0 {
 		r.executeActions(r.workflow.OnFailure)
 	}
 
@@ -315,6 +320,10 @@ func (r *Runner) Run(ctx context.Context) (*WorkflowResult, error) {
 
 // executeStep executes a single step
 func (r *Runner) executeStep(step Step) StepResult {
+	return r.executeStepContext(r.ctx, step)
+}
+
+func (r *Runner) executeStepContext(parent context.Context, step Step) StepResult {
 	startTime := time.Now()
 	result := StepResult{
 		StepID:    step.ID,
@@ -344,7 +353,7 @@ func (r *Runner) executeStep(step Step) StepResult {
 	}
 
 	// Execute with timeout
-	ctx, cancel := context.WithTimeout(r.ctx, timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	// Execute based on step type
@@ -519,24 +528,9 @@ func (r *Runner) executeATOCheck(ctx context.Context, config StepConfig) (interf
 	return result, nil
 }
 
-// executeCrawl performs web crawling (placeholder - needs crawler integration)
+// executeCrawl rejects unsupported crawling rather than inventing page results.
 func (r *Runner) executeCrawl(ctx context.Context, config StepConfig) (interface{}, error) {
-	target := r.resolveVariable(config.Target)
-
-	// This would integrate with the actual crawler module
-	// For now, return the target as a single page
-	result := map[string]interface{}{
-		"target":    target,
-		"pages":     []string{target},
-		"max_depth": config.MaxDepth,
-		"max_pages": config.MaxPages,
-	}
-
-	if r.verbose {
-		fmt.Printf("  Crawl target: %s (max_depth: %d)\n", target, config.MaxDepth)
-	}
-
-	return result, nil
+	return nil, fmt.Errorf("workflow crawl is not implemented; no action was performed")
 }
 
 // executeXSS performs XSS vulnerability scanning with WAF bypass
@@ -604,34 +598,14 @@ func (r *Runner) executeXSS(ctx context.Context, config StepConfig) (interface{}
 	return result, nil
 }
 
-// executeInject performs payload injection (requires browser - placeholder)
+// executeInject rejects unsupported browser injection.
 func (r *Runner) executeInject(ctx context.Context, config StepConfig) (interface{}, error) {
-	selector := r.resolveVariable(config.Selector)
-	payload := r.resolveVariable(config.Payload)
-
-	// This would integrate with browser/injector module
-	result := map[string]interface{}{
-		"selector": selector,
-		"payload":  payload,
-		"status":   "requires_browser",
-	}
-
-	if r.verbose {
-		fmt.Printf("  Inject: selector=%s\n", selector)
-	}
-
-	return result, nil
+	return nil, fmt.Errorf("workflow browser injection is not implemented; no action was performed")
 }
 
-// executeExtract extracts data using patterns (placeholder)
+// executeExtract rejects unsupported extraction rather than returning false success.
 func (r *Runner) executeExtract(ctx context.Context, config StepConfig) (interface{}, error) {
-	result := map[string]interface{}{
-		"patterns": config.Patterns,
-		"fields":   config.Fields,
-		"matches":  []string{},
-	}
-
-	return result, nil
+	return nil, fmt.Errorf("workflow pattern extraction is not implemented; no action was performed")
 }
 
 // executeReport generates a scan report
@@ -725,7 +699,7 @@ func (r *Runner) executeLoop(ctx context.Context, step Step) (interface{}, error
 	for _, item := range items {
 		r.setVar("loop_item", item)
 		for _, subStep := range step.Config.SubSteps {
-			result := r.executeStep(subStep)
+			result := r.executeStepContext(ctx, subStep)
 			results = append(results, result)
 		}
 	}
@@ -734,24 +708,39 @@ func (r *Runner) executeLoop(ctx context.Context, step Step) (interface{}, error
 }
 
 func (r *Runner) executeParallel(ctx context.Context, step Step) (interface{}, error) {
-	results := make([]StepResult, len(step.Config.ParallelSteps))
-	done := make(chan struct{}, len(step.Config.ParallelSteps))
-
-	for i, pStep := range step.Config.ParallelSteps {
-		go func(idx int, s Step) {
-			results[idx] = r.executeStep(s)
-			done <- struct{}{}
-		}(i, pStep)
+	steps := step.Config.ParallelSteps
+	results := make([]StepResult, len(steps))
+	limit := step.Config.MaxParallel
+	if limit <= 0 {
+		limit = 4
 	}
-
-	for range step.Config.ParallelSteps {
+	limit = min(limit, 256)
+	slots := make(chan struct{}, limit)
+	var wg sync.WaitGroup
+launch:
+	for index, child := range steps {
 		select {
-		case <-done:
+		case slots <- struct{}{}:
 		case <-ctx.Done():
-			return results, ctx.Err()
+			break launch
+		}
+		wg.Add(1)
+		go func(index int, child Step) {
+			defer wg.Done()
+			defer func() { <-slots }()
+			results[index] = r.executeStepContext(ctx, child)
+		}(index, child)
+	}
+	// Never expose a results slice while workers can still write to it.
+	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return results, err
+	}
+	for _, result := range results {
+		if result.Status == "failure" {
+			return results, fmt.Errorf("parallel step %s failed: %s", result.StepID, result.Error)
 		}
 	}
-
 	return results, nil
 }
 

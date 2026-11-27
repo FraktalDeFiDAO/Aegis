@@ -2,6 +2,12 @@
 
 This file is retained as a root-level pointer for older references.
 
+## Current verification status
+
+**Not fully to spec.** See [the evidence-backed conformance matrix](docs/plans/2026-11-27-plan-conformance.md)
+for current gaps, confirmed fixes, and release gates. Historical execution logs
+are not a current completion checklist.
+
 ## Active Plans (in priority order)
 
 1. **`docs/plans/2026-07-12-v4-comprehensive-remediation.md`** — CURRENT ACTIVE PLAN
@@ -12,6 +18,10 @@ This file is retained as a root-level pointer for older references.
 2. **`docs/plans/2026-06-02-go-native-hardening-remediation.md`** — PARTIALLY EXECUTED (PR #1 merged)
    - Batches 1-8 cover detector FP gates, crawl determinism, session contracts, API contracts, recon, OWASP quality, backlog, and final audit
    - Some batches may be superseded by v4 plan; cross-reference before executing
+
+3. **`docs/plans/2026-11-15-connector-feasible-features-plan.md`** — PARTIALLY IMPLEMENTED
+   - Browser connector phases 0–7; use the current conformance matrix for status.
+   - Store packaging/security records do not establish full feature-plan completion.
 
 ## Historical / Reference
 
